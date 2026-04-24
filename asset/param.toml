@@ -1,0 +1,7 @@
+[Detector]
+MinArea = 1000
+MaxArea =90000 
+Threshold=200
+yaw_offset.0 =0
+
+yaw_offset.1 =132

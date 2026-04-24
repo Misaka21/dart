@@ -1,0 +1,27 @@
+# CMake / C++
+/build/
+/cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs
+/log/
+*.log
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
