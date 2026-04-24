@@ -1,15 +1,17 @@
-//
-// Created by 霍睿 on 25-3-2.
-//
 #include <chrono>
+#include <cmath>
 #include <thread>
 
+#include "crc16.hpp"
 #include "plugin/debug/logger.hpp"
+#include "plugin/param/static_config.hpp"
+#include "plugin/rerun/rmcv_rerun.hpp"
 #include "plugin/stats/fps_stats.hpp"
 #include "protocol/uart_protocol.hpp"
+#ifdef HAVE_LIBUSB_1_0
+#include "protocol/usb_bulk_protocol.hpp"
+#endif
 #include "serial_thread.hpp"
-
-// UMT相关头文件
 #include "umt/umt.hpp"
 
 namespace serial {
@@ -17,184 +19,138 @@ namespace serial {
 namespace umt = ::umt;
 using namespace std::chrono_literals;
 
-void serial_sender_run(std::shared_ptr<TransceiverManager<16>> transceiver) {
-    try {
-        // 视觉数据状态管理
-        auto vision_transmit = umt::BasicObjManager<VisionData_t>::find_or_create("vision_transmit");
-        auto send_enabled = umt::BasicObjManager<bool>::find_or_create("serial_send_enabled", true);
-        auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+namespace {
 
-        debug::print(debug::PrintMode::INFO, "SerialSender", "Sender thread started");
+constexpr float kDegToRad = static_cast<float>(M_PI / 180.0);
 
-        stats::FpsStats fps_stats("SerialSender");
-
-        while (app_running->get()) {
-            try {
-                // 检查发送是否启用
-                if (!send_enabled->get()) {
-                    std::this_thread::sleep_for(10ms);
-                    continue;
-                }
-
-                // 从ObjManager获取视觉数据
-                VisionData_t vision_data = vision_transmit->get();
-
-                // 转换为数据包
-                FixedPacket<16> packet;
-                if (SerialUtils::vision_data_to_packet(vision_data, packet)) {
-                    // 发送数据包
-                    if (!transceiver->send_packet(packet)) {
-                        debug::print(debug::PrintMode::WARNING, "SerialSender", "Failed to send packet");
-                    } else {
-                        fps_stats.update();
-                    }
-                } else {
-                    debug::print(debug::PrintMode::WARNING, "SerialSender", "Failed to convert vision data");
-                }
-
-                // 短暂休眠避免过度占用CPU
-                std::this_thread::sleep_for(1ms);
-
-            } catch (const std::exception& e) {
-                debug::print(debug::PrintMode::ERROR, "SerialSender", "Exception: {}", e.what());
-                std::this_thread::sleep_for(100ms);
-            }
-        }
-
-        debug::print(debug::PrintMode::INFO, "SerialSender", "Sender thread stopped");
-
-    } catch (const std::exception& e) {
-        debug::print(debug::PrintMode::ERROR, "SerialSender", "Init failed: {}", e.what());
-    }
+std::string reconnect_attempts_to_string(int64_t max_reconnect) {
+    return max_reconnect < 0 ? "inf" : std::to_string(max_reconnect);
 }
 
-void serial_receiver_run(std::shared_ptr<TransceiverManager<16>> transceiver) {
-    try {
-        // 创建接收数据队列并通过BasicObjManager共享
-        auto receive_queue = umt::BasicObjManager<ReceiveQueue>::find_or_create("receive_queue");
-        auto recv_enabled = umt::BasicObjManager<bool>::find_or_create("serial_recv_enabled", true);
-        auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+std::shared_ptr<ProtocolInterface> create_uart_protocol(const toml::table& config) {
+    std::string port_name = static_param::get_param<std::string>(config, "Serial.uart", "port_name");
+    int64_t baudrate = static_param::get_param<int64_t>(config, "Serial.uart", "baudrate");
 
-        debug::print(debug::PrintMode::INFO, "SerialReceiver", "Receiver thread started");
-
-        while (app_running->get()) {
-            try {
-                // 检查接收是否启用
-                if (!recv_enabled->get()) {
-                    std::this_thread::sleep_for(10ms);
-                    continue;
-                }
-
-                // 接收数据包
-                FixedPacket<16> packet;
-                if (transceiver->recv_packet(packet)) {
-                    // 立即记录接收时间戳 (关键: 减少延迟抖动)
-                    auto recv_time = std::chrono::steady_clock::now();
-                    int64_t recv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                        recv_time.time_since_epoch()
-                    ).count();
-
-                    // 转换为数据结构体
-                    SerialReceiveData receive_data;
-                    if (SerialUtils::packet_to_receive_data(packet, receive_data)) {
-                        // 设置时间戳
-                        receive_data.recv_time_us = recv_time_us;
-
-                        // 限制队列大小，最多300条
-                        if (receive_queue->get().size() >= 300) {
-                            receive_queue->get().pop();  // 移除最旧的
-                        }
-
-                        // 添加到队列
-                        receive_queue->get().push(receive_data);
-                    }
-                } else {
-                    std::this_thread::sleep_for(1ms);
-                }
-
-            } catch (const std::exception& e) {
-                debug::print(debug::PrintMode::ERROR, "SerialReceiver", "Exception: {}", e.what());
-                std::this_thread::sleep_for(10ms);
-            }
-        }
-
-        debug::print(debug::PrintMode::INFO, "SerialReceiver", "Receiver thread stopped");
-
-    } catch (const std::exception& e) {
-        debug::print(debug::PrintMode::ERROR, "SerialReceiver", "Init failed: {}", e.what());
-    }
+    debug::print(debug::PrintMode::INFO, "SerialManager",
+        "Creating UART: {} @ {}", port_name, baudrate);
+    return std::make_shared<UartProtocol>(port_name, static_cast<int>(baudrate));
 }
 
-/**
- * @brief 串口管理器 - 负责创建和管理串口实例
- */
+std::shared_ptr<ProtocolInterface> create_usb_bulk_protocol(const toml::table& config) {
+#ifdef HAVE_LIBUSB_1_0
+    std::string vendor_id = static_param::get_param<std::string>(config, "Serial.usb_bulk", "vendor_id");
+    std::string product_id = static_param::get_param<std::string>(config, "Serial.usb_bulk", "product_id");
+    std::string serial_number = static_param::get_param<std::string>(config, "Serial.usb_bulk", "serial_number");
+    int64_t interface_number = static_param::get_param<int64_t>(config, "Serial.usb_bulk", "interface_number");
+    std::string bulk_in = static_param::get_param<std::string>(config, "Serial.usb_bulk", "bulk_in_endpoint");
+    std::string bulk_out = static_param::get_param<std::string>(config, "Serial.usb_bulk", "bulk_out_endpoint");
+    int64_t timeout_ms = static_param::get_param<int64_t>(config, "Serial.usb_bulk", "timeout_ms");
+
+    debug::print(debug::PrintMode::INFO, "SerialManager",
+        "Creating USB Bulk: VID={} PID={}",
+        vendor_id, product_id.empty() ? "(any)" : product_id);
+
+    return UsbBulkProtocol::create_from_config(
+        vendor_id,
+        product_id,
+        serial_number,
+        static_cast<int>(interface_number),
+        bulk_in,
+        bulk_out,
+        static_cast<int>(timeout_ms)
+    );
+#else
+    (void)config;
+    debug::print(debug::PrintMode::ERROR, "SerialManager",
+        "USB bulk requested but this build has no libusb-1.0 support");
+    return nullptr;
+#endif
+}
+
+std::shared_ptr<ProtocolInterface> create_protocol_from_config(const toml::table& config) {
+    std::string protocol_type = static_param::get_param<std::string>(config, "Serial", "protocol");
+
+    if (protocol_type == "uart") {
+        return create_uart_protocol(config);
+    }
+    if (protocol_type == "usb_bulk") {
+        return create_usb_bulk_protocol(config);
+    }
+
+    debug::print(debug::PrintMode::ERROR, "SerialManager",
+        "Unknown protocol type: {}", protocol_type);
+    return nullptr;
+}
+
 class SerialManager {
 public:
     SerialManager() = delete;
 
-    // 重试配置
     static constexpr int MAX_RETRY_COUNT = 5;
     static constexpr int RETRY_INTERVAL_MS = 2000;
 
-    /**
-     * @brief 启动串口收发线程（共享同一个串口实例）
-     * @param port_path 串口设备路径
-     * @param baud_rate 波特率
-     *
-     * 如果串口打开失败，会重试 MAX_RETRY_COUNT 次
-     * 重试全部失败后程序退出
-     */
-    static void start_serial_threads(const std::string& port_path = "/dev/ttyUSB0", int baud_rate = 115200) {
-        debug::print(debug::PrintMode::INFO, "SerialManager", "Starting: {} @ {}", port_path, baud_rate);
+    static void start_serial_threads() {
+        auto config = static_param::parse_file("hardware.toml");
 
-        std::shared_ptr<UartProtocol> uart = nullptr;
+        bool ignore_crc = static_param::get_param<bool>(config, "Serial", "ignore_crc");
+        bool data_print_debug = static_param::get_param<bool>(config, "Serial", "data_print_debug");
+        auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", data_print_debug);
+        debug_print->get() = data_print_debug;
+
+        int64_t reconnect_interval_ms = RETRY_INTERVAL_MS;
+        int64_t max_reconnect = MAX_RETRY_COUNT;
+        std::string protocol_type = static_param::get_param<std::string>(config, "Serial", "protocol");
+        if (protocol_type == "usb_bulk") {
+            reconnect_interval_ms = static_param::get_param<int64_t>(
+                config, "Serial.usb_bulk", "reconnect_interval_ms");
+            max_reconnect = static_param::get_param<int64_t>(
+                config, "Serial.usb_bulk", "max_reconnect_attempts");
+        }
+
+        std::shared_ptr<ProtocolInterface> protocol = nullptr;
         int retry_count = 0;
 
-        // 重试打开串口
-        while (retry_count < MAX_RETRY_COUNT) {
+        while (max_reconnect < 0 || retry_count < max_reconnect) {
             try {
-                uart = std::make_shared<UartProtocol>(port_path, baud_rate);
-
-                if (uart->open()) {
-                    debug::print(debug::PrintMode::INFO, "SerialManager", "Port {} opened", port_path);
+                protocol = create_protocol_from_config(config);
+                if (protocol && protocol->open()) {
+                    debug::print(debug::PrintMode::INFO, "SerialManager",
+                        "Protocol opened successfully");
                     break;
                 }
 
-                debug::print(debug::PrintMode::WARNING, "SerialManager",
-                    "Open failed ({}/{}): {}", retry_count + 1, MAX_RETRY_COUNT, uart->error_message());
-
+                if (protocol) {
+                    debug::print(debug::PrintMode::WARNING, "SerialManager",
+                        "Open failed ({}/{}): {}",
+                        retry_count + 1,
+                        reconnect_attempts_to_string(max_reconnect),
+                        protocol->error_message());
+                }
             } catch (const std::exception& e) {
                 debug::print(debug::PrintMode::WARNING, "SerialManager",
-                    "Exception ({}/{}): {}", retry_count + 1, MAX_RETRY_COUNT, e.what());
+                    "Exception ({}/{}): {}",
+                    retry_count + 1,
+                    reconnect_attempts_to_string(max_reconnect),
+                    e.what());
             }
 
             retry_count++;
-            if (retry_count < MAX_RETRY_COUNT) {
-                debug::print(debug::PrintMode::INFO, "SerialManager",
-                    "Retry in {} seconds...", RETRY_INTERVAL_MS / 1000);
-                std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_INTERVAL_MS));
-            }
+            debug::print(debug::PrintMode::INFO, "SerialManager",
+                "Retry in {} ms...", reconnect_interval_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_interval_ms));
         }
 
-        // 重试全部失败，退出程序
-        if (!uart || !uart->is_open()) {
+        if (!protocol || !protocol->is_open()) {
             debug::print(debug::PrintMode::FATAL, "SerialManager",
-                "Port {} open failed after {} retries, exiting", port_path, MAX_RETRY_COUNT);
+                "Protocol open failed after {} retries, exiting", retry_count);
             std::exit(1);
         }
 
         try {
-            // 创建TransceiverManager（共享）
-            auto transceiver = std::make_shared<TransceiverManager<16>>(uart);
-
-            // 启动发送线程
+            auto transceiver = std::make_shared<TransceiverManager<32>>(protocol, ignore_crc);
             std::thread([transceiver]() { serial_sender_run(transceiver); }).detach();
-
-            // 启动接收线程
             std::thread([transceiver]() { serial_receiver_run(transceiver); }).detach();
-
             debug::print(debug::PrintMode::INFO, "SerialManager", "TX/RX threads started");
-
         } catch (const std::exception& e) {
             debug::print(debug::PrintMode::FATAL, "SerialManager", "Start failed: {}", e.what());
             std::exit(1);
@@ -202,27 +158,160 @@ public:
     }
 };
 
-/**
- * @brief 启动串口通信（同时启动发送和接收线程，共享串口实例）
- * @param port_path 串口设备路径
- * @param baud_rate 波特率
- */
-void start_serial_communication(const std::string& port_path, int baud_rate) {
-    SerialManager::start_serial_threads(port_path, baud_rate);
+} // namespace
+
+void serial_sender_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
+    try {
+        auto config = static_param::parse_file("hardware.toml");
+        const bool imu_yaw_negate = static_param::get_param<bool>(config, "Serial", "imu_yaw_negate");
+        const bool imu_pitch_negate = static_param::get_param<bool>(config, "Serial", "imu_pitch_negate");
+
+        auto vision_transmit = umt::BasicObjManager<VisionData_t>::find_or_create("vision_transmit");
+        auto send_enabled = umt::BasicObjManager<bool>::find_or_create("serial_send_enabled", true);
+        auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+        auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", false);
+
+        debug::print(debug::PrintMode::INFO, "SerialSender", "Sender thread started");
+        debug::print(debug::PrintMode::INFO, "SerialSender",
+            "TX sign mapping: yaw_negate={} pitch_negate={}", imu_yaw_negate, imu_pitch_negate);
+
+        stats::FpsStats fps_stats("SerialSender", "sent");
+        auto next_tick = std::chrono::steady_clock::now();
+
+        while (app_running->get()) {
+            try {
+                if (!send_enabled->get()) {
+                    std::this_thread::sleep_for(10ms);
+                    next_tick = std::chrono::steady_clock::now();
+                    continue;
+                }
+
+                VisionData_t vision_data = vision_transmit->load();
+                if (imu_yaw_negate) {
+                    vision_data.yaw = -vision_data.yaw;
+                }
+                if (imu_pitch_negate) {
+                    vision_data.pitch = -vision_data.pitch;
+                }
+
+                bool sent = false;
+                FixedPacket<32> packet;
+                if (SerialUtils::vision_data_to_packet(vision_data, packet)) {
+                    if (debug_print->get()) {
+                        std::string hex;
+                        for (size_t i = 0; i < 32; ++i) {
+                            hex += fmt::format("{:02X} ", packet.buffer()[i]);
+                        }
+                        debug::print(debug::PrintMode::DEBUG, "SerialTX", "{}", hex);
+                    }
+
+                    if (transceiver->send_packet(packet)) {
+                        sent = true;
+                    }
+                }
+
+                fps_stats.update(0, sent);
+                next_tick += 1ms;
+                std::this_thread::sleep_until(next_tick);
+            } catch (const std::exception& e) {
+                debug::print(debug::PrintMode::ERROR, "SerialSender", "Exception: {}", e.what());
+                std::this_thread::sleep_for(100ms);
+                next_tick = std::chrono::steady_clock::now();
+            }
+        }
+
+        debug::print(debug::PrintMode::INFO, "SerialSender", "Sender thread stopped");
+    } catch (const std::exception& e) {
+        debug::print(debug::PrintMode::ERROR, "SerialSender", "Init failed: {}", e.what());
+    }
 }
 
-// SerialUtils实现
+void serial_receiver_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
+    try {
+        umt::Publisher<SerialReceiveData> publisher("serial_receive");
+        auto current_aim_mode = umt::BasicObjManager<uint8_t>::find_or_create("current_aim_mode", 0);
+        auto current_aim_mode_time_us =
+            umt::BasicObjManager<int64_t>::find_or_create("current_aim_mode_time_us", 0);
+        auto recv_enabled = umt::BasicObjManager<bool>::find_or_create("serial_recv_enabled", true);
+        auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+        auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", false);
+
+        debug::print(debug::PrintMode::INFO, "SerialReceiver", "Receiver thread started");
+        stats::FpsStats fps_stats("SerialReceiver", "received");
+
+        while (app_running->get()) {
+            try {
+                if (!recv_enabled->get()) {
+                    std::this_thread::sleep_for(10ms);
+                    continue;
+                }
+
+                FixedPacket<32> packet;
+                bool received = transceiver->recv_packet(packet);
+                if (received) {
+                    if (debug_print->get()) {
+                        std::string hex;
+                        for (size_t i = 0; i < 32; ++i) {
+                            hex += fmt::format("{:02X} ", packet.buffer()[i]);
+                        }
+                        debug::print(debug::PrintMode::DEBUG, "SerialRX", "{}", hex);
+                    }
+
+                    auto recv_time = std::chrono::steady_clock::now();
+                    int64_t recv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        recv_time.time_since_epoch()
+                    ).count();
+
+                    SerialReceiveData receive_data;
+                    if (SerialUtils::packet_to_receive_data(packet, receive_data)) {
+                        receive_data.recv_time_us = recv_time_us;
+                        current_aim_mode->store(receive_data.aim_mode);
+                        current_aim_mode_time_us->store(recv_time_us);
+
+                        rr::scalar("serial/yaw", static_cast<double>(receive_data.yaw));
+                        rr::scalar("serial/pitch", static_cast<double>(receive_data.pitch));
+                        rr::scalar("serial/bullet_speed", static_cast<double>(receive_data.bullet_speed));
+                        rr::scalar("serial/aim_mode", static_cast<int>(receive_data.aim_mode));
+
+                        publisher.push(receive_data);
+                    }
+                } else {
+                    std::this_thread::sleep_for(1ms);
+                }
+
+                fps_stats.update(0, received);
+            } catch (const std::exception& e) {
+                debug::print(debug::PrintMode::ERROR, "SerialReceiver", "Exception: {}", e.what());
+                std::this_thread::sleep_for(10ms);
+            }
+        }
+
+        debug::print(debug::PrintMode::INFO, "SerialReceiver", "Receiver thread stopped");
+    } catch (const std::exception& e) {
+        debug::print(debug::PrintMode::ERROR, "SerialReceiver", "Init failed: {}", e.what());
+    }
+}
+
+void start_serial_communication() {
+    SerialManager::start_serial_threads();
+}
+
 bool SerialUtils::vision_data_to_packet(const VisionData_t& cmd, PacketType& packet) {
     try {
-        // 清空数据包
         packet.clear();
 
-        // 填充数据（根据实际协议调整格式）
-        packet.load_data(static_cast<float>(cmd.cmd_id), 1);
-        packet.load_data(cmd.yaw, 5);
-        packet.load_data(cmd.pitch, 9);
-        packet.load_data(cmd.distance, 13);
+        const uint8_t control = cmd.is_found ? 1U : 0U;
+        const uint8_t shoot = 0U;
+        const float yaw_rad = cmd.yaw * kDegToRad;
+        const float pitch_rad = cmd.pitch * kDegToRad;
 
+        packet.load_data(control, 1);
+        packet.load_data(shoot, 2);
+        packet.load_data(yaw_rad, 3);
+        packet.load_data(pitch_rad, 7);
+
+        uint8_t* buf = const_cast<uint8_t*>(packet.buffer());
+        crc16_append(buf + 1, 30);
         return true;
     } catch (const std::exception& e) {
         debug::print(debug::PrintMode::ERROR, "SerialUtils", "vision_data_to_packet: {}", e.what());
@@ -232,20 +321,42 @@ bool SerialUtils::vision_data_to_packet(const VisionData_t& cmd, PacketType& pac
 
 bool SerialUtils::packet_to_receive_data(const PacketType& packet, SerialReceiveData& data) {
     try {
-        // 从数据包提取数据 (格式需与电控约定)
-        // 目前简单解析: [1]yaw [5]pitch [9]roll
-        float yaw, pitch, roll;
-        if (packet.unload_data(yaw, 1)) {
+        uint8_t mode = 0;
+        if (packet.unload_data(mode, 1)) {
+            data.aim_mode = mode;
+        }
+
+        uint8_t aiming_lock = 0;
+        if (packet.unload_data(aiming_lock, 2)) {
+            data.aiming_lock = (aiming_lock != 0);
+        }
+
+        float bullet_speed = 15.0f;
+        if (packet.unload_data(bullet_speed, 3)) {
+            data.bullet_speed = bullet_speed;
+        }
+
+        float yaw = 0.0f;
+        if (packet.unload_data(yaw, 7)) {
             data.yaw = yaw;
         }
-        if (packet.unload_data(pitch, 5)) {
+
+        float pitch = 0.0f;
+        if (packet.unload_data(pitch, 11)) {
             data.pitch = pitch;
         }
-        if (packet.unload_data(roll, 9)) {
+
+        float roll = 0.0f;
+        if (packet.unload_data(roll, 15)) {
             data.roll = roll;
         }
-        // TODO: 其他字段需要和电控约定后添加
 
+        uint8_t enemy_color = 0;
+        if (packet.unload_data(enemy_color, 19)) {
+            data.enemy_color = enemy_color;
+        }
+
+        data.allow_fire = true;
         return true;
     } catch (const std::exception& e) {
         debug::print(debug::PrintMode::ERROR, "SerialUtils", "packet_to_receive_data: {}", e.what());

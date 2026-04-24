@@ -3,6 +3,7 @@
 //
 #include <iostream>
 #include "plugin/param/parameter.hpp"
+#include "plugin/rmcv_bag/recorder_node.hpp"
 #include "hardware/hardware_node.hpp"
 #include "detector/detector_node.hpp"
 #include "umt/umt.hpp"
@@ -15,6 +16,8 @@
 
 int main() {
 	std::string param_file_name = "param.toml";
+	auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+	umt::BasicObjManager<bool>::find_or_create("match_mode", false);
 
 	// 初始化日志会话
 	debug::init_session();
@@ -37,6 +40,9 @@ int main() {
 	fmt::print(fmt::fg(fmt::color::gold), "========================Loading Detector=======================\n");
 	std::thread([]() { detector::detector_run(); }).detach();
 
+	fmt::print(fmt::fg(fmt::color::gold), "========================Loading Recorder=======================\n");
+	std::thread([]() { rmcv_bag::start_recorder_node(); }).detach();
+
 	// 硬编码参数（argc=2，argv[0]=程序名，argv[1]=脚本路径）
 	const wchar_t *w_argv[] = {
 		L"./RobotCV",	  // 程序名（可自定义）
@@ -47,6 +53,7 @@ int main() {
 	// 计算参数数量（argc = 数组长度 - 1）
 	int argc = sizeof(w_argv) / sizeof(w_argv[0]) - 1;
 
-	// 调用 Python 主函数
-	return Py_Main(argc, const_cast<wchar_t **>(w_argv));
+	int ret = Py_Main(argc, const_cast<wchar_t **>(w_argv));
+	app_running->get() = false;
+	return ret;
 }

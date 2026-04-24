@@ -1,0 +1,145 @@
+// Source file corresponding header
+#include "runtime_parameter.hpp"
+
+// C system headers
+
+// C++ system headers
+#include <chrono>
+#include <memory>
+
+// Third-party library headers (embedded)
+#include "thirdparty/toml.hpp"
+
+// Project headers
+#include "plugin/debug/logger.hpp"
+#include "plugin/rerun/rmcv_rerun.hpp"
+#include "umt/ObjManager.hpp"
+
+namespace runtime_param {
+    const std::string PARAM_PREFIX = "param.";
+
+    Param get_value(const toml::node &node) {
+        if (node.is_boolean()) {
+            return (*node.as_boolean()).get();
+        }
+        if (node.is_integer()) {
+            return (*node.as_integer()).get();
+        }
+        if (node.is_floating_point()) {
+            return (*node.as_floating_point()).get();
+        }
+        if (node.is_string()) {
+            return (*node.as_string()).get();
+        }
+        if (node.is_array() && (node.as_array()->is_homogeneous<int64_t>() || node.as_array()->empty())) {
+            std::vector<int64_t> vec_int;
+            for (const auto &ele: *node.as_array()) {
+                vec_int.push_back((*ele.as_integer()).get());
+            }
+            return vec_int;
+        }
+        return Param();
+    }
+
+    std::shared_ptr<Param> create_param(const std::string &name) {
+        namespace umt = ::umt;
+        return umt::ObjManager<Param>::create(PARAM_PREFIX + name);
+    }
+
+    std::shared_ptr<Param> find_param(const std::string &name) {
+        namespace umt = ::umt;
+        return umt::ObjManager<Param>::find(PARAM_PREFIX + name);
+    }
+
+    void wait_for_param(const std::string &name) {
+        while (runtime_param::find_param(name) == nullptr) {
+            using namespace std::chrono_literals;
+            debug::print(::debug::PrintMode::WARNING, "param", "参数还未创建完毕。");
+            std::this_thread::sleep_for(200ms);
+        }
+    }
+
+    class ParamManager {
+    public:
+        void load_and_update(const std::string &param_file_path);
+
+    private:
+        void parse(const toml::node &node, const std::string &prefix);
+
+        bool init_ok = false;
+        std::set<std::shared_ptr<Param> > param_set;
+    };
+
+    void ParamManager::load_and_update(const std::string &param_file_path) {
+        using namespace std::chrono_literals;
+        auto running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+
+        while (running->get()) {
+            try {
+                const auto table =
+                        toml::parse_file(std::string(CONFIG_DIR) + "/" + param_file_path);
+                parse(table, "");
+                if (!this->init_ok) {
+                    this->init_ok = true;
+                    this->param_set.emplace(create_param("ok"));
+                    debug::print(debug::PrintMode::INFO, "param", "参数创建完毕！");
+                }
+            } catch (const std::exception &e) {
+                debug::print(debug::PrintMode::ERROR, "param", "{}", e.what());
+            }
+            std::this_thread::sleep_for(1s);
+        }
+        debug::print(debug::PrintMode::INFO, "param", "参数热重载线程退出");
+    }
+
+    void ParamManager::parse(const toml::node &node, const std::string &prefix) {
+        if (node.is_table()) {
+            for (const auto &child: *node.as_table()) {
+                parse(
+                    child.second,
+                    (prefix == "" ? "" : prefix + ".") + std::string(child.first.str())
+                );
+            }
+        } else {
+            const Param res = get_value(node);
+            const auto found = find_param(prefix);
+            if (found == nullptr) {
+                const auto ptr = create_param(prefix);
+                this->param_set.emplace(ptr);
+                *ptr = res;
+            } else {
+                if (*found != res) {
+                    const auto tmp = *found;
+                    *found = res;
+                    debug::print(
+                        debug::PrintMode::INFO,
+                        "param",
+                        "参数 {} 被修改: {} -> {}",
+                        prefix,
+                        std::visit(PARAM_VISITOR, tmp),
+                        std::visit(PARAM_VISITOR, res)
+                    );
+                    // 记录参数变化到 Rerun 时间线
+                    std::visit([&prefix](auto&& v) {
+                        using T = std::decay_t<decltype(v)>;
+                        if constexpr (std::is_same_v<T, double>) {
+                            rr::scalar("params/" + prefix, v);
+                        } else if constexpr (std::is_same_v<T, int64_t>) {
+                            rr::scalar("params/" + prefix, static_cast<int>(v));
+                        } else if constexpr (std::is_same_v<T, bool>) {
+                            rr::scalar("params/" + prefix, v);
+                        }
+                        // string/vector 忽略
+                    }, res);
+                }
+            }
+        }
+    }
+
+    void parameter_run(const std::string &param_file_path) {
+        using namespace std::chrono_literals;
+
+        ParamManager manager;
+        manager.load_and_update(param_file_path);
+    }
+} // namespace base

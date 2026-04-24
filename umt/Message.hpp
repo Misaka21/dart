@@ -9,6 +9,7 @@
 #include <list>
 #include <mutex>
 #include <queue>
+#include <vector>
 
 // Third-party library headers (optional)
 #ifdef ENABLE_WEBVIEW
@@ -236,6 +237,23 @@ namespace umt {
             T tmp = std::move(fifo.front());
             fifo.pop();
             return tmp;
+        }
+
+        /**
+   * @brief 取出当前缓冲区中的所有消息
+   * @return 按接收顺序返回所有待处理消息
+   */
+        std::vector<T> drain() {
+            if (!p_msg)
+                throw MessageError_Empty();
+            std::unique_lock lock(mtx);
+            std::vector<T> items;
+            items.reserve(fifo.size());
+            while (!fifo.empty()) {
+                items.emplace_back(std::move(fifo.front()));
+                fifo.pop();
+            }
+            return items;
         }
 
     private:

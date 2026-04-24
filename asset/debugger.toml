@@ -1,0 +1,12 @@
+[Recorder]
+enable_recording = false
+record_raw_video = true
+record_imu_csv = true
+camera_fps = 200.0
+video_codec = "MJPG"
+sample_interval = 3
+
+[Rerun]
+enable = false
+mode = "serve"
+port = 9876

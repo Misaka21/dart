@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ============================================================================
 option(ENABLE_WEBVIEW "Enable Python webview bindings" ON)
 option(USE_CCACHE "Use ccache for faster rebuilds" ON)
+option(ENABLE_RERUN "Enable Rerun visualization" OFF)
 
 # ============================================================================
 # 编译加速 (ccache)
@@ -71,13 +72,30 @@ add_compile_definitions(
 find_package(OpenCV REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(Threads REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(Python 3.6 REQUIRED COMPONENTS Development Interpreter)
 find_package(pybind11 REQUIRED)
 
+if(ENABLE_RERUN)
+    include(FetchContent)
+    FetchContent_Declare(rerun_sdk URL
+        https://github.com/rerun-io/rerun/releases/latest/download/rerun_cpp_sdk.zip)
+    FetchContent_MakeAvailable(rerun_sdk)
+    add_compile_definitions(ENABLE_RERUN)
+endif()
+
+include_directories(
+    ${PROJECT_SOURCE_DIR}
+    ${OpenCV_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
+    ${Python_INCLUDE_DIRS}
+)
+
 # ============================================================================
 # 子目录
 # ============================================================================
+add_subdirectory(plugin)
 add_subdirectory(hardware)
 
 # ============================================================================
@@ -85,7 +103,6 @@ add_subdirectory(hardware)
 # ============================================================================
 add_executable(${PROJECT_NAME}
     main.cpp
-    plugin/param/parameter.cpp
     detector/detector.cpp
 )
 
@@ -95,7 +112,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     # 项目内部库
+    plugin
     hardware
+    rmcv_bag
 
     # 第三方库
     fmt::fmt
@@ -105,5 +124,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     pybind11::embed
 
     # 系统库
-    pthread
+    Threads::Threads
 )

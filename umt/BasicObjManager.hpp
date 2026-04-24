@@ -40,6 +40,18 @@ public:
         value = std::move(new_value);
     }
 
+    void store(const T& new_value) {
+        set(new_value);
+    }
+
+    void store(T&& new_value) {
+        set(std::move(new_value));
+    }
+
+    T load() const {
+        return value;
+    }
+
 private:
     T value;
 };
