@@ -1,20 +1,29 @@
 [Detector]
-MinArea = 1000
-MaxArea =90000 
-Threshold=200
+    # 绿色通道二值化
+    #@int 绿色通道二值化阈值
+    threshold = 200
 
-# 绿灯测距参数
-# LightDiameter: 绿灯真实直径，单位 m
-# CameraFx / CameraFy: 相机标定得到的焦距，单位 px，必须和 detector 输入图像尺寸一致
-# PixelSigma: detector 估计直径的像素标准差，用来显示距离标准差
-LightDiameter = 0.050
-CameraFx = 1200.0
-CameraFy = 1200.0
-PixelSigma = 2.0
+    # 轮廓面积过滤
+    #@int 最小轮廓面积
+    min_area = 1000
+    #@int 最大轮廓面积
+    max_area = 90000
 
-yaw_offset.0 =0
+    # 绿灯直径测距
+    #@double 绿灯真实直径 (m)
+    light_diameter = 0.050
+    #@double 相机 x 方向焦距 (px)，需与 detector 输入图像尺寸一致
+    camera_fx = 1200.0
+    #@double 相机 y 方向焦距 (px)，需与 detector 输入图像尺寸一致
+    camera_fy = 1200.0
+    #@double detector 估计直径的像素标准差 (px)
+    pixel_sigma = 2.0
 
-yaw_offset.1 =132
+    # 偏航目标线
+    #@int 0 号飞镖目标线偏移 (px)
+    yaw_offset_0 = 0
 
 [Visualizer]
-show_window = false
+    # 调试窗口
+    #@bool 是否显示 detector 调试窗口
+    show_window = false

@@ -26,15 +26,15 @@ namespace detector
         cv::split(data, channels);
         green_channel = channels[1];
 
-        double threshold_value = plugin::get_param<int64_t>("Detector.Threshold");
+        double threshold_value = plugin::get_param<int64_t>("Detector.threshold");
         cv::threshold(green_channel, binary, threshold_value, 255, cv::THRESH_BINARY);
         std::vector<std::vector<cv::Point>> contours;
         std::vector<cv::Vec4i> hierarchy;
         cv::findContours(binary, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
         // 设置面积筛选阈值
-        int64_t min_area = plugin::get_param<int64_t>("Detector.MinArea"); // 最小面积阈值
-        int64_t max_area = plugin::get_param<int64_t>("Detector.MaxArea"); // 最大面积阈值
+        int64_t min_area = plugin::get_param<int64_t>("Detector.min_area"); // 最小面积阈值
+        int64_t max_area = plugin::get_param<int64_t>("Detector.max_area"); // 最大面积阈值
 
         // 遍历所有轮廓
         for (size_t i = 0; i < contours.size(); i++)
@@ -102,10 +102,10 @@ namespace detector
 
     void BaseDetector::update_light_distance(double diameter_px)
     {
-        const double light_diameter_m = plugin::get_param<double>("Detector.LightDiameter");
-        const double fx = plugin::get_param<double>("Detector.CameraFx");
-        const double fy = plugin::get_param<double>("Detector.CameraFy");
-        const double pixel_sigma = plugin::get_param<double>("Detector.PixelSigma");
+        const double light_diameter_m = plugin::get_param<double>("Detector.light_diameter");
+        const double fx = plugin::get_param<double>("Detector.camera_fx");
+        const double fy = plugin::get_param<double>("Detector.camera_fy");
+        const double pixel_sigma = plugin::get_param<double>("Detector.pixel_sigma");
 
         double focal_px = 0.0;
         if (fx > 0.0 && fy > 0.0)
@@ -137,7 +137,7 @@ namespace detector
 
     int BaseDetector::calculate_yaw_diff()
     {
-        this->_target_x = this->get_image_center_x() + plugin::get_param<int64_t>("Detector.yaw_offset." + std::to_string(this->_dart_id));
+        this->_target_x = this->get_image_center_x() + plugin::get_param<int64_t>("Detector.yaw_offset_" + std::to_string(this->_dart_id));
         this->_light_x = this->get_light_x();
         // 灯在线右侧为正
         return this->get_detected_state() ? this->_light_x - this->_target_x : 0;
