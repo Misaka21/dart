@@ -22,7 +22,7 @@ struct VisionData_t {
         : cmd_id(0x01), yaw(0.0f), pitch(0.0f), distance(0.0f), target_id(0), is_found(0) {}
 };
 
-// 接收协议按 RMCV2026 迁移: IMU 角度统一为弧度。
+// Dart 接收协议: 电控只下发是否检测和当前第几枚飞镖。
 struct SerialReceiveData {
     float yaw;
     float pitch;
@@ -35,6 +35,8 @@ struct SerialReceiveData {
     float bullet_speed;
 
     uint8_t aim_mode;
+    bool should_detect;
+    uint8_t dart_number;
     bool allow_fire;
     bool aiming_lock;
 
@@ -44,7 +46,7 @@ struct SerialReceiveData {
         : yaw(0.0f), pitch(0.0f), roll(0.0f)
         , robot_id(0), enemy_color(0)
         , bullet_speed(15.0f)
-        , aim_mode(0), allow_fire(false), aiming_lock(false)
+        , aim_mode(0), should_detect(false), dart_number(1), allow_fire(false), aiming_lock(false)
         , recv_time_us(0) {}
 };
 

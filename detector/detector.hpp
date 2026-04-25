@@ -13,6 +13,8 @@ namespace detector
         /* data */
         cv::Mat _frame_img;
         int _dart_id;
+        int _dart_number;
+        bool _should_detect;
         double _time;
         struct LightInfo
         {
@@ -49,6 +51,8 @@ namespace detector
         BaseDetector(/* args */);
         ~BaseDetector();
         void detect(cv::Mat data);
+        void set_should_detect(bool should_detect);
+        void update_dart_id(int dart_number);
         int calculate_yaw_diff();
         bool get_detected_state()
         {

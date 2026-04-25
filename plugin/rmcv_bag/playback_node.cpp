@@ -29,16 +29,11 @@ using hardware::SyncFrame;
 // CSV Reader
 // ============================================================================
 
-// 新协议: 删除 robot_id, enemy_color, allow_fire
 struct ImuRecord {
     int64_t timestamp_us;
     int frame_id;
-    float yaw;
-    float pitch;
-    float roll;
-    float bullet_speed;
-    uint8_t aim_mode;
-    bool aiming_lock;
+    bool should_detect;
+    uint8_t dart_number;
     int64_t serial_timestamp;
 };
 
@@ -79,18 +74,22 @@ private:
             tokens.push_back(token);
         }
 
-        if (tokens.size() < 9) return false;
+        if (tokens.size() < 5) return false;
 
         try {
             record.timestamp_us = std::stoll(tokens[0]);
             record.frame_id = std::stoi(tokens[1]);
-            record.yaw = std::stof(tokens[2]);
-            record.pitch = std::stof(tokens[3]);
-            record.roll = std::stof(tokens[4]);
-            record.bullet_speed = std::stof(tokens[5]);
-            record.aim_mode = static_cast<uint8_t>(std::stoi(tokens[6]));
-            record.aiming_lock = (std::stoi(tokens[7]) != 0);
-            record.serial_timestamp = std::stoll(tokens[8]);
+            if (tokens.size() == 5) {
+                record.should_detect = (std::stoi(tokens[2]) != 0);
+                record.dart_number = static_cast<uint8_t>(std::stoi(tokens[3]));
+                record.serial_timestamp = std::stoll(tokens[4]);
+                return true;
+            }
+
+            // 兼容旧录包: timestamp, frame, yaw, pitch, roll, bullet_speed, aim_mode, [dart_number], ...
+            record.should_detect = (std::stoi(tokens[6]) != 0);
+            record.dart_number = tokens.size() >= 10 ? static_cast<uint8_t>(std::stoi(tokens[7])) : 1;
+            record.serial_timestamp = std::stoll(tokens.back());
             return true;
         } catch (...) {
             return false;
@@ -180,12 +179,11 @@ void start_playback_node(const std::string& bag_path, double playback_speed) {
         // 使用 CSV 中的原始时间戳 (微秒)
         sync_frame.timestamp_us = imu.timestamp_us;
 
-        sync_frame.serial_data.yaw = imu.yaw;
-        sync_frame.serial_data.pitch = imu.pitch;
-        sync_frame.serial_data.roll = imu.roll;
-        sync_frame.serial_data.bullet_speed = imu.bullet_speed;
-        sync_frame.serial_data.aim_mode = imu.aim_mode;
-        sync_frame.serial_data.aiming_lock = imu.aiming_lock;
+        sync_frame.serial_data.should_detect = imu.should_detect;
+        sync_frame.serial_data.aim_mode = imu.should_detect ? 1U : 0U;
+        sync_frame.serial_data.dart_number = imu.dart_number;
+        sync_frame.serial_data.aiming_lock = imu.should_detect;
+        sync_frame.serial_data.allow_fire = imu.should_detect;
         sync_frame.serial_data.recv_time_us = imu.serial_timestamp;
         sync_frame.serial_valid = true;
         if (csv_index < csv_reader->size()) {

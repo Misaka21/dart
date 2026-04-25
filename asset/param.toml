@@ -19,9 +19,21 @@
     #@double detector 估计直径的像素标准差 (px)
     pixel_sigma = 2.0
 
-    # 偏航目标线
-    #@int 0 号飞镖目标线偏移 (px)
+    # 飞镖序列
+    #@int 电控当前飞镖序号的起始值，1 表示电控发送 1~4
+    dart_number_base = 1
+    #@int[] 四枚飞镖 id，按发射顺序填写
+    dart_ids = [0, 1, 2, 3]
+
+    # 偏航目标线偏移
+    #@int id 为 0 的飞镖目标线偏移 (px)
     yaw_offset_0 = 0
+    #@int id 为 1 的飞镖目标线偏移 (px)
+    yaw_offset_1 = 132
+    #@int id 为 2 的飞镖目标线偏移 (px)
+    yaw_offset_2 = 0
+    #@int id 为 3 的飞镖目标线偏移 (px)
+    yaw_offset_3 = 0
 
 [Visualizer]
     # 调试窗口

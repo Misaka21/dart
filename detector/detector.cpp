@@ -7,7 +7,7 @@
 namespace detector
 {
     BaseDetector::BaseDetector(/* args */)
-        : _dart_id(0), _time(0.0), _yaw_diff(0), _target_x(0), _light_x(0)
+        : _dart_id(0), _dart_number(1), _should_detect(false), _time(0.0), _yaw_diff(0), _target_x(0), _light_x(0)
     {
     }
     BaseDetector::~BaseDetector()
@@ -19,6 +19,11 @@ namespace detector
         //auto [frame_img, _, time] = data;
         this->_frame_img = data;
         this->_light_info = LightInfo();
+        if (!this->_should_detect)
+        {
+            return;
+        }
+
         cv::Mat green_channel, binary;
         std::vector<cv::Mat> channels;
 
@@ -98,6 +103,33 @@ namespace detector
                 }                    
             }
         }
+    }
+
+    void BaseDetector::set_should_detect(bool should_detect)
+    {
+        this->_should_detect = should_detect;
+    }
+
+    void BaseDetector::update_dart_id(int dart_number)
+    {
+        this->_dart_number = dart_number;
+
+        const auto dart_ids = plugin::get_param<std::vector<int64_t>>("Detector.dart_ids");
+        if (dart_ids.empty())
+        {
+            this->_dart_id = 0;
+            return;
+        }
+
+        const int64_t dart_number_base = plugin::get_param<int64_t>("Detector.dart_number_base");
+        const int64_t dart_index = static_cast<int64_t>(dart_number) - dart_number_base;
+        if (dart_index < 0 || dart_index >= static_cast<int64_t>(dart_ids.size()))
+        {
+            this->_dart_id = static_cast<int>(dart_ids.front());
+            return;
+        }
+
+        this->_dart_id = static_cast<int>(dart_ids[static_cast<size_t>(dart_index)]);
     }
 
     void BaseDetector::update_light_distance(double diameter_px)
@@ -199,8 +231,10 @@ namespace detector
 
         // 添加目标线标签
         std::string target_position_text = ",target_position: " + std::to_string(this->_target_x);
-        std::string dart_id = "dart_id: " + std::to_string(this->_dart_id);
-        cv::putText(output_img, dart_id+target_position_text,
+        std::string dart_info = "should_detect: " + std::to_string(this->_should_detect ? 1 : 0) +
+                                ",dart_number: " + std::to_string(this->_dart_number) +
+                                ",dart_id: " + std::to_string(this->_dart_id);
+        cv::putText(output_img, dart_info+target_position_text,
                     cv::Point(this->_target_x + 10, 40),
                     cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 0), 2);
 
@@ -233,7 +267,9 @@ namespace detector
         }
 
         // 绘制检测状态信息
-        std::string status = this->_light_info.is_detected ? "light_detected" : "light_not_detected";
+        std::string status = !this->_should_detect
+                                 ? "detector_disabled"
+                                 : (this->_light_info.is_detected ? "light_detected" : "light_not_detected");
         cv::putText(output_img, status,
                     cv::Point(10, output_img.rows - 20),
                     cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);

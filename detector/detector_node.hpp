@@ -34,6 +34,12 @@ namespace detector
                     auto sync_frame = frame_subscriber.pop();
                     cv::Mat camera_frame = sync_frame.image;
 
+                    detector.set_should_detect(sync_frame.serial_valid && sync_frame.serial_data.should_detect);
+                    if (sync_frame.serial_valid)
+                    {
+                        detector.update_dart_id(sync_frame.serial_data.dart_number);
+                    }
+
                     // 进行检测
                     detector.detect(camera_frame);
 

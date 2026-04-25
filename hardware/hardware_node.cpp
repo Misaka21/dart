@@ -140,6 +140,8 @@ std::optional<serial::SerialReceiveData> interpolate_serial_data(
     result.robot_id = nearest.robot_id;
     result.bullet_speed = nearest.bullet_speed;
     result.aim_mode = nearest.aim_mode;
+    result.should_detect = nearest.should_detect;
+    result.dart_number = nearest.dart_number;
     result.aiming_lock = nearest.aiming_lock;
     result.enemy_color = nearest.enemy_color;
     result.allow_fire = nearest.allow_fire;
@@ -180,11 +182,14 @@ void start_hardware_node() {
                 static_param::get_param<double>(config, "Serial.fake_data", "roll_rad"));
             fake_data.bullet_speed = static_cast<float>(
                 static_param::get_param<double>(config, "Serial.fake_data", "bullet_speed"));
-            fake_data.aim_mode = static_cast<uint8_t>(
-                static_param::get_param<int64_t>(config, "Serial.fake_data", "aim_mode"));
-            fake_data.aiming_lock = static_param::get_param<bool>(config, "Serial.fake_data", "aiming_lock");
+            fake_data.should_detect =
+                static_param::get_param<bool>(config, "Serial.fake_data", "should_detect");
+            fake_data.aim_mode = fake_data.should_detect ? 1U : 0U;
+            fake_data.dart_number = static_cast<uint8_t>(
+                static_param::get_param<int64_t>(config, "Serial.fake_data", "dart_number"));
+            fake_data.aiming_lock = fake_data.should_detect;
             fake_data.enemy_color = injected_enemy_color;
-            fake_data.allow_fire = injected_allow_fire;
+            fake_data.allow_fire = injected_allow_fire && fake_data.should_detect;
             fake_data.robot_id = static_cast<uint8_t>(
                 static_param::get_param<int64_t>(config, "Serial.fake_data", "robot_id"));
         }
@@ -197,8 +202,8 @@ void start_hardware_node() {
             std::this_thread::sleep_for(100ms);
         } else {
             debug::print(debug::PrintMode::WARNING, "HardwareNode",
-                "Using fake serial: mode={}, bullet_speed={:.1f}",
-                fake_data.aim_mode, fake_data.bullet_speed);
+                "Using fake serial: should_detect={}, dart_number={}, bullet_speed={:.1f}",
+                fake_data.should_detect, fake_data.dart_number, fake_data.bullet_speed);
         }
 
         camera::CameraConfig cam_config = load_camera_config(config);
@@ -207,9 +212,9 @@ void start_hardware_node() {
 
         umt::Publisher<SyncFrame> pub("sync_frame");
         umt::Subscriber<serial::SerialReceiveData> serial_subscriber("serial_receive", 300);
-        auto current_aim_mode = umt::BasicObjManager<uint8_t>::find_or_create("current_aim_mode", 0);
-        auto current_aim_mode_time_us =
-            umt::BasicObjManager<int64_t>::find_or_create("current_aim_mode_time_us", 0);
+        auto current_should_detect = umt::BasicObjManager<bool>::find_or_create("current_should_detect", false);
+        auto current_should_detect_time_us =
+            umt::BasicObjManager<int64_t>::find_or_create("current_should_detect_time_us", 0);
         auto hardware_running = umt::BasicObjManager<bool>::find_or_create("hardware_running", false);
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
 
@@ -261,9 +266,9 @@ void start_hardware_node() {
 
                 if (frame.serial_valid) {
                     frame.serial_data.enemy_color = injected_enemy_color;
-                    frame.serial_data.allow_fire = injected_allow_fire;
-                    current_aim_mode->store(frame.serial_data.aim_mode);
-                    current_aim_mode_time_us->store(frame.timestamp_us);
+                    frame.serial_data.allow_fire = injected_allow_fire && frame.serial_data.should_detect;
+                    current_should_detect->store(frame.serial_data.should_detect);
+                    current_should_detect_time_us->store(frame.timestamp_us);
                 }
 
                 if (frame.serial_valid) {

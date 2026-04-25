@@ -229,9 +229,9 @@ void serial_sender_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
 void serial_receiver_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
     try {
         umt::Publisher<SerialReceiveData> publisher("serial_receive");
-        auto current_aim_mode = umt::BasicObjManager<uint8_t>::find_or_create("current_aim_mode", 0);
-        auto current_aim_mode_time_us =
-            umt::BasicObjManager<int64_t>::find_or_create("current_aim_mode_time_us", 0);
+        auto current_should_detect = umt::BasicObjManager<bool>::find_or_create("current_should_detect", false);
+        auto current_should_detect_time_us =
+            umt::BasicObjManager<int64_t>::find_or_create("current_should_detect_time_us", 0);
         auto recv_enabled = umt::BasicObjManager<bool>::find_or_create("serial_recv_enabled", true);
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
         auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", false);
@@ -265,13 +265,11 @@ void serial_receiver_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
                     SerialReceiveData receive_data;
                     if (SerialUtils::packet_to_receive_data(packet, receive_data)) {
                         receive_data.recv_time_us = recv_time_us;
-                        current_aim_mode->store(receive_data.aim_mode);
-                        current_aim_mode_time_us->store(recv_time_us);
+                        current_should_detect->store(receive_data.should_detect);
+                        current_should_detect_time_us->store(recv_time_us);
 
-                        rr::scalar("serial/yaw", static_cast<double>(receive_data.yaw));
-                        rr::scalar("serial/pitch", static_cast<double>(receive_data.pitch));
-                        rr::scalar("serial/bullet_speed", static_cast<double>(receive_data.bullet_speed));
-                        rr::scalar("serial/aim_mode", static_cast<int>(receive_data.aim_mode));
+                        rr::scalar("serial/should_detect", receive_data.should_detect);
+                        rr::scalar("serial/dart_number", static_cast<int>(receive_data.dart_number));
 
                         publisher.push(receive_data);
                     }
@@ -321,42 +319,20 @@ bool SerialUtils::vision_data_to_packet(const VisionData_t& cmd, PacketType& pac
 
 bool SerialUtils::packet_to_receive_data(const PacketType& packet, SerialReceiveData& data) {
     try {
-        uint8_t mode = 0;
-        if (packet.unload_data(mode, 1)) {
-            data.aim_mode = mode;
+        // Dart RX payload: byte 1 = should_detect, byte 2 = dart_number.
+        uint8_t should_detect = 0;
+        if (packet.unload_data(should_detect, 1)) {
+            data.should_detect = (should_detect != 0);
         }
 
-        uint8_t aiming_lock = 0;
-        if (packet.unload_data(aiming_lock, 2)) {
-            data.aiming_lock = (aiming_lock != 0);
+        uint8_t dart_number = 1;
+        if (packet.unload_data(dart_number, 2)) {
+            data.dart_number = dart_number;
         }
 
-        float bullet_speed = 15.0f;
-        if (packet.unload_data(bullet_speed, 3)) {
-            data.bullet_speed = bullet_speed;
-        }
-
-        float yaw = 0.0f;
-        if (packet.unload_data(yaw, 7)) {
-            data.yaw = yaw;
-        }
-
-        float pitch = 0.0f;
-        if (packet.unload_data(pitch, 11)) {
-            data.pitch = pitch;
-        }
-
-        float roll = 0.0f;
-        if (packet.unload_data(roll, 15)) {
-            data.roll = roll;
-        }
-
-        uint8_t enemy_color = 0;
-        if (packet.unload_data(enemy_color, 19)) {
-            data.enemy_color = enemy_color;
-        }
-
-        data.allow_fire = true;
+        data.aim_mode = data.should_detect ? 1U : 0U;
+        data.aiming_lock = data.should_detect;
+        data.allow_fire = data.should_detect;
         return true;
     } catch (const std::exception& e) {
         debug::print(debug::PrintMode::ERROR, "SerialUtils", "packet_to_receive_data: {}", e.what());
