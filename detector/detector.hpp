@@ -35,6 +35,8 @@ namespace detector
                   is_detected(false) {}
         } _light_info;
         int _yaw_diff;
+        int _dart_yaw_offset;
+        int _total_yaw_offset;
         int get_image_center_x()
         {
             return this->_frame_img.cols / 2;

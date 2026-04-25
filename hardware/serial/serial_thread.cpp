@@ -1,5 +1,4 @@
 #include <chrono>
-#include <cmath>
 #include <thread>
 
 #include "crc16.hpp"
@@ -20,8 +19,6 @@ namespace umt = ::umt;
 using namespace std::chrono_literals;
 
 namespace {
-
-constexpr float kDegToRad = static_cast<float>(M_PI / 180.0);
 
 std::string reconnect_attempts_to_string(int64_t max_reconnect) {
     return max_reconnect < 0 ? "inf" : std::to_string(max_reconnect);
@@ -147,7 +144,7 @@ public:
         }
 
         try {
-            auto transceiver = std::make_shared<TransceiverManager<32>>(protocol, ignore_crc);
+            auto transceiver = std::make_shared<TransceiverManager<8>>(protocol, ignore_crc);
             std::thread([transceiver]() { serial_sender_run(transceiver); }).detach();
             std::thread([transceiver]() { serial_receiver_run(transceiver); }).detach();
             debug::print(debug::PrintMode::INFO, "SerialManager", "TX/RX threads started");
@@ -160,20 +157,14 @@ public:
 
 } // namespace
 
-void serial_sender_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
+void serial_sender_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
     try {
-        auto config = static_param::parse_file("hardware.toml");
-        const bool imu_yaw_negate = static_param::get_param<bool>(config, "Serial", "imu_yaw_negate");
-        const bool imu_pitch_negate = static_param::get_param<bool>(config, "Serial", "imu_pitch_negate");
-
         auto vision_transmit = umt::BasicObjManager<VisionData_t>::find_or_create("vision_transmit");
         auto send_enabled = umt::BasicObjManager<bool>::find_or_create("serial_send_enabled", true);
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
         auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", false);
 
         debug::print(debug::PrintMode::INFO, "SerialSender", "Sender thread started");
-        debug::print(debug::PrintMode::INFO, "SerialSender",
-            "TX sign mapping: yaw_negate={} pitch_negate={}", imu_yaw_negate, imu_pitch_negate);
 
         stats::FpsStats fps_stats("SerialSender", "sent");
         auto next_tick = std::chrono::steady_clock::now();
@@ -187,19 +178,13 @@ void serial_sender_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
                 }
 
                 VisionData_t vision_data = vision_transmit->load();
-                if (imu_yaw_negate) {
-                    vision_data.yaw = -vision_data.yaw;
-                }
-                if (imu_pitch_negate) {
-                    vision_data.pitch = -vision_data.pitch;
-                }
 
                 bool sent = false;
-                FixedPacket<32> packet;
+                SerialUtils::PacketType packet;
                 if (SerialUtils::vision_data_to_packet(vision_data, packet)) {
                     if (debug_print->get()) {
                         std::string hex;
-                        for (size_t i = 0; i < 32; ++i) {
+                        for (size_t i = 0; i < 8; ++i) {
                             hex += fmt::format("{:02X} ", packet.buffer()[i]);
                         }
                         debug::print(debug::PrintMode::DEBUG, "SerialTX", "{}", hex);
@@ -226,7 +211,7 @@ void serial_sender_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
     }
 }
 
-void serial_receiver_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
+void serial_receiver_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
     try {
         umt::Publisher<SerialReceiveData> publisher("serial_receive");
         auto current_should_detect = umt::BasicObjManager<bool>::find_or_create("current_should_detect", false);
@@ -246,12 +231,12 @@ void serial_receiver_run(std::shared_ptr<TransceiverManager<32>> transceiver) {
                     continue;
                 }
 
-                FixedPacket<32> packet;
+                SerialUtils::PacketType packet;
                 bool received = transceiver->recv_packet(packet);
                 if (received) {
                     if (debug_print->get()) {
                         std::string hex;
-                        for (size_t i = 0; i < 32; ++i) {
+                        for (size_t i = 0; i < 8; ++i) {
                             hex += fmt::format("{:02X} ", packet.buffer()[i]);
                         }
                         debug::print(debug::PrintMode::DEBUG, "SerialRX", "{}", hex);
@@ -300,16 +285,12 @@ bool SerialUtils::vision_data_to_packet(const VisionData_t& cmd, PacketType& pac
 
         const uint8_t control = cmd.is_found ? 1U : 0U;
         const uint8_t shoot = 0U;
-        const float yaw_rad = cmd.yaw * kDegToRad;
-        const float pitch_rad = cmd.pitch * kDegToRad;
 
         packet.load_data(control, 1);
         packet.load_data(shoot, 2);
-        packet.load_data(yaw_rad, 3);
-        packet.load_data(pitch_rad, 7);
 
         uint8_t* buf = const_cast<uint8_t*>(packet.buffer());
-        crc16_append(buf + 1, 30);
+        crc16_append(buf + 1, 6);
         return true;
     } catch (const std::exception& e) {
         debug::print(debug::PrintMode::ERROR, "SerialUtils", "vision_data_to_packet: {}", e.what());
@@ -319,7 +300,9 @@ bool SerialUtils::vision_data_to_packet(const VisionData_t& cmd, PacketType& pac
 
 bool SerialUtils::packet_to_receive_data(const PacketType& packet, SerialReceiveData& data) {
     try {
-        // Dart RX payload: byte 1 = should_detect, byte 2 = dart_number.
+        // Dart RX payload:
+        // byte 1 = should_detect
+        // byte 2 = dart_number
         uint8_t should_detect = 0;
         if (packet.unload_data(should_detect, 1)) {
             data.should_detect = (should_detect != 0);

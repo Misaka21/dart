@@ -9,11 +9,11 @@
 
 namespace serial {
 
-// 保留当前工程的发送接口；底层会映射到 2026 的 32B 协议。
+// 保留当前工程的发送接口；底层会映射到 dart 8B 协议。
 struct VisionData_t {
     uint8_t cmd_id;
-    float yaw;         // 兼容旧接口: 输入单位仍按 degree 处理
-    float pitch;       // 兼容旧接口: 输入单位仍按 degree 处理
+    float yaw;         // 兼容旧接口保留，dart 8B 协议暂不发送
+    float pitch;       // 兼容旧接口保留，dart 8B 协议暂不发送
     float distance;
     uint8_t target_id;
     uint8_t is_found;
@@ -50,15 +50,15 @@ struct SerialReceiveData {
         , recv_time_us(0) {}
 };
 
-void serial_sender_run(std::shared_ptr<TransceiverManager<32>> transceiver);
+void serial_sender_run(std::shared_ptr<TransceiverManager<8>> transceiver);
 
-void serial_receiver_run(std::shared_ptr<TransceiverManager<32>> transceiver);
+void serial_receiver_run(std::shared_ptr<TransceiverManager<8>> transceiver);
 
 void start_serial_communication();
 
 class SerialUtils {
 public:
-    using PacketType = FixedPacket<32>;
+    using PacketType = FixedPacket<8>;
 
     static bool vision_data_to_packet(const VisionData_t& cmd, PacketType& packet);
 

@@ -168,30 +168,17 @@ void start_hardware_node() {
         bool imu_yaw_negate = static_param::get_param<bool>(config, "Serial", "imu_yaw_negate");
 
         bool use_fake_serial = static_param::get_param<bool>(config, "Serial", "use_fake_serial_data");
-        uint8_t injected_enemy_color = static_cast<uint8_t>(
-            static_param::get_param<int64_t>(config, "Serial.fake_data", "enemy_color"));
         bool injected_allow_fire = static_param::get_param<bool>(config, "Serial.fake_data", "allow_fire");
 
         serial::SerialReceiveData fake_data;
         if (use_fake_serial) {
-            fake_data.yaw = static_cast<float>(
-                static_param::get_param<double>(config, "Serial.fake_data", "yaw_rad"));
-            fake_data.pitch = static_cast<float>(
-                static_param::get_param<double>(config, "Serial.fake_data", "pitch_rad"));
-            fake_data.roll = static_cast<float>(
-                static_param::get_param<double>(config, "Serial.fake_data", "roll_rad"));
-            fake_data.bullet_speed = static_cast<float>(
-                static_param::get_param<double>(config, "Serial.fake_data", "bullet_speed"));
             fake_data.should_detect =
                 static_param::get_param<bool>(config, "Serial.fake_data", "should_detect");
             fake_data.aim_mode = fake_data.should_detect ? 1U : 0U;
             fake_data.dart_number = static_cast<uint8_t>(
                 static_param::get_param<int64_t>(config, "Serial.fake_data", "dart_number"));
             fake_data.aiming_lock = fake_data.should_detect;
-            fake_data.enemy_color = injected_enemy_color;
             fake_data.allow_fire = injected_allow_fire && fake_data.should_detect;
-            fake_data.robot_id = static_cast<uint8_t>(
-                static_param::get_param<int64_t>(config, "Serial.fake_data", "robot_id"));
         }
 
         debug::print(debug::PrintMode::INFO, "HardwareNode", "Delta_t: {} us", delta_t_us);
@@ -265,7 +252,6 @@ void start_hardware_node() {
                 }
 
                 if (frame.serial_valid) {
-                    frame.serial_data.enemy_color = injected_enemy_color;
                     frame.serial_data.allow_fire = injected_allow_fire && frame.serial_data.should_detect;
                     current_should_detect->store(frame.serial_data.should_detect);
                     current_should_detect_time_us->store(frame.timestamp_us);

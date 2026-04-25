@@ -69,17 +69,11 @@
 [Serial.fake_data]
     # 虚拟串口数据配置
     # 实际 dart 接收协议只包含 should_detect 和 dart_number
-    # 下面姿态/速度字段仅作为 SyncFrame 默认值保留
-    yaw_rad = 0.0
-    pitch_rad = 0.0
-    roll_rad = 0.0
-    robot_id = 3
-    enemy_color = 1
-    bullet_speed = 15.0
+
     #@bool 当前是否应该检测
     should_detect = true
     #@int 当前第几枚飞镖，实际串口由电控发送
-    dart_number = 1
+    dart_number = 2
     allow_fire = true
 
 [TimeSync]

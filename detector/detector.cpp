@@ -1,13 +1,123 @@
 #include "detector.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include <string>
+#include <vector>
+
+namespace
+{
+    int clamp_to_image_x(int x, const cv::Mat &img)
+    {
+        if (img.cols <= 0)
+        {
+            return x;
+        }
+        return std::clamp(x, 0, img.cols - 1);
+    }
+
+    cv::Point clamp_text_origin(cv::Point origin, const cv::Mat &img, int text_width, int text_height)
+    {
+        if (img.cols > 0)
+        {
+            origin.x = std::clamp(origin.x, 4, std::max(4, img.cols - text_width - 6));
+        }
+        if (img.rows > 0)
+        {
+            origin.y = std::clamp(origin.y, text_height + 4, std::max(text_height + 4, img.rows - 6));
+        }
+        return origin;
+    }
+
+    void put_text_with_bg(cv::Mat &img, const std::string &text, cv::Point origin,
+                          double scale, const cv::Scalar &fg, const cv::Scalar &bg, int thickness = 1)
+    {
+        int baseline = 0;
+        const cv::Size text_size = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, scale, thickness, &baseline);
+        origin = clamp_text_origin(origin, img, text_size.width, text_size.height + baseline);
+        cv::rectangle(img,
+                      cv::Point(origin.x - 4, origin.y - text_size.height - 4),
+                      cv::Point(origin.x + text_size.width + 4, origin.y + baseline + 4),
+                      bg, cv::FILLED);
+        cv::putText(img, text, origin, cv::FONT_HERSHEY_SIMPLEX, scale, fg, thickness, cv::LINE_AA);
+    }
+
+    void draw_vertical_marker(cv::Mat &img, int x, const cv::Scalar &color,
+                              const std::string &label, int thickness, int label_y)
+    {
+        const int visible_x = clamp_to_image_x(x, img);
+        cv::line(img, cv::Point(visible_x, 0), cv::Point(visible_x, img.rows), color, thickness);
+        put_text_with_bg(img, label + " x=" + std::to_string(x),
+                         cv::Point(visible_x + 8, label_y), 0.55, color, cv::Scalar(25, 25, 25));
+    }
+
+    void draw_offset_measure(cv::Mat &img, int from_x, int to_x, int y,
+                             const cv::Scalar &color, const std::string &label)
+    {
+        if (img.empty())
+        {
+            return;
+        }
+
+        y = std::clamp(y, 16, std::max(16, img.rows - 16));
+        const int x1 = clamp_to_image_x(from_x, img);
+        const int x2 = clamp_to_image_x(to_x, img);
+        cv::line(img, cv::Point(x1, y), cv::Point(x2, y), color, 2);
+        cv::line(img, cv::Point(x1, y - 8), cv::Point(x1, y + 8), color, 2);
+        cv::line(img, cv::Point(x2, y - 8), cv::Point(x2, y + 8), color, 2);
+
+        const int mid_x = (x1 + x2) / 2;
+        put_text_with_bg(img, label, cv::Point(mid_x + 8, y - 12), 0.55, color, cv::Scalar(25, 25, 25));
+    }
+
+    void draw_panel(cv::Mat &img, const std::vector<std::string> &lines)
+    {
+        if (img.empty() || lines.empty())
+        {
+            return;
+        }
+
+        const double scale = 0.55;
+        const int thickness = 1;
+        const int line_height = 24;
+        int max_width = 0;
+        int baseline = 0;
+        for (const auto &line : lines)
+        {
+            const cv::Size size = cv::getTextSize(line, cv::FONT_HERSHEY_SIMPLEX, scale, thickness, &baseline);
+            max_width = std::max(max_width, size.width);
+        }
+
+        const cv::Point top_left(10, 10);
+        const cv::Point bottom_right(top_left.x + max_width + 20,
+                                     top_left.y + static_cast<int>(lines.size()) * line_height + 12);
+        cv::rectangle(img, top_left, bottom_right, cv::Scalar(20, 20, 20), cv::FILLED);
+        cv::rectangle(img, top_left, bottom_right, cv::Scalar(90, 90, 90), 1);
+
+        int y = top_left.y + 24;
+        for (const auto &line : lines)
+        {
+            cv::putText(img, line, cv::Point(top_left.x + 10, y),
+                        cv::FONT_HERSHEY_SIMPLEX, scale, cv::Scalar(245, 245, 245), thickness, cv::LINE_AA);
+            y += line_height;
+        }
+    }
+}
 
 namespace detector
 {
     BaseDetector::BaseDetector(/* args */)
-        : _dart_id(0), _dart_number(1), _should_detect(false), _time(0.0), _yaw_diff(0), _target_x(0), _light_x(0)
+        : _dart_id(0),
+          _dart_number(1),
+          _should_detect(false),
+          _time(0.0),
+          _yaw_diff(0),
+          _dart_yaw_offset(0),
+          _total_yaw_offset(0),
+          _target_x(0),
+          _light_x(0)
     {
     }
     BaseDetector::~BaseDetector()
@@ -171,14 +281,19 @@ namespace detector
     {
         const int64_t dart_offset = plugin::get_param<int64_t>("Detector.yaw_offset_" + std::to_string(this->_dart_id));
         const int64_t total_offset = plugin::get_param<int64_t>("Detector.yaw_offset_total");
-        this->_target_x = this->get_image_center_x() + static_cast<int>(dart_offset + total_offset);
+        this->_dart_yaw_offset = static_cast<int>(dart_offset);
+        this->_total_yaw_offset = static_cast<int>(total_offset);
+        this->_target_x = this->get_image_center_x() + this->_dart_yaw_offset + this->_total_yaw_offset;
         this->_light_x = this->get_light_x();
         // 灯在线右侧为正
-        return this->get_detected_state() ? this->_light_x - this->_target_x : 0;
+        this->_yaw_diff = this->get_detected_state() ? this->_light_x - this->_target_x : 0;
+        return this->_yaw_diff;
     }
 
     void BaseDetector::draw(cv::Mat &output_img)
     {
+        this->calculate_yaw_diff();
+
         // 如果检测到光源，绘制光源信息
         if (this->get_detected_state())
         {
@@ -220,25 +335,28 @@ namespace detector
                         cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y + 70),
                         cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 255), 2);
             // 添加偏航差值信息
-            std::string yaw_diff_text = "yaw_diff: " + std::to_string(this->calculate_yaw_diff());
+            std::string yaw_diff_text = "yaw_diff: " + std::to_string(this->_yaw_diff);
             cv::putText(output_img, yaw_diff_text,
                         cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y + 110),
                         cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 255), 2);
         }
 
-        // 在目标位置绘制垂直线
-        cv::line(output_img, cv::Point(this->_target_x, 0),
-                 cv::Point(this->_target_x, output_img.rows),
-                 cv::Scalar(255, 0, 0), 2);
+        const int center_x = this->get_image_center_x();
+        const int dart_target_x = center_x + this->_dart_yaw_offset;
 
-        // 添加目标线标签
-        std::string target_position_text = ",target_position: " + std::to_string(this->_target_x);
-        std::string dart_info = "should_detect: " + std::to_string(this->_should_detect ? 1 : 0) +
-                                ",dart_number: " + std::to_string(this->_dart_number) +
-                                ",dart_id: " + std::to_string(this->_dart_id);
-        cv::putText(output_img, dart_info+target_position_text,
-                    cv::Point(this->_target_x + 10, 40),
-                    cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 0), 2);
+        draw_vertical_marker(output_img, center_x, cv::Scalar(230, 230, 230),
+                             "image_center", 1, 30);
+        draw_vertical_marker(output_img, dart_target_x, cv::Scalar(255, 0, 255),
+                             "dart target", 2, 88);
+        draw_vertical_marker(output_img, this->_target_x, cv::Scalar(255, 255, 0),
+                             "final target", 3, 146);
+
+        draw_offset_measure(output_img, center_x, dart_target_x, 204,
+                            cv::Scalar(255, 0, 255),
+                            "yaw_offset_" + std::to_string(this->_dart_id) + "=" + std::to_string(this->_dart_yaw_offset) + " px");
+        draw_offset_measure(output_img, dart_target_x, this->_target_x, 262,
+                            cv::Scalar(0, 165, 255),
+                            "yaw_offset_total=" + std::to_string(this->_total_yaw_offset) + " px");
 
         // 如果检测到光源，绘制从光源位置到目标位置的箭头
         if (this->_light_info.is_detected)
@@ -275,5 +393,19 @@ namespace detector
         cv::putText(output_img, status,
                     cv::Point(10, output_img.rows - 20),
                     cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
+
+        std::vector<std::string> panel_lines;
+        panel_lines.emplace_back("Detector overlay");
+        panel_lines.emplace_back("should_detect: " + std::to_string(this->_should_detect ? 1 : 0));
+        panel_lines.emplace_back("dart_number " + std::to_string(this->_dart_number) +
+                                 " -> dart_id " + std::to_string(this->_dart_id));
+        panel_lines.emplace_back("image_center_x: " + std::to_string(center_x));
+        panel_lines.emplace_back("yaw_offset_" + std::to_string(this->_dart_id) + ": " +
+                                 std::to_string(this->_dart_yaw_offset) + " px");
+        panel_lines.emplace_back("yaw_offset_total: " + std::to_string(this->_total_yaw_offset) + " px");
+        panel_lines.emplace_back("final_target_x: " + std::to_string(this->_target_x));
+        panel_lines.emplace_back("light_x: " + (this->_light_info.is_detected ? std::to_string(this->_light_x) : std::string("N/A")));
+        panel_lines.emplace_back("yaw_diff: " + (this->_light_info.is_detected ? std::to_string(this->_yaw_diff) : std::string("N/A")));
+        draw_panel(output_img, panel_lines);
     }
 }
