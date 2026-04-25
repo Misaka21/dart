@@ -26,6 +26,8 @@
     dart_ids = [0, 1, 2, 3]
 
     # 偏航目标线偏移
+    #@int 全局目标线偏移修正 (px)，会叠加到每枚飞镖的独立偏移上
+    yaw_offset_total = 0
     #@int id 为 0 的飞镖目标线偏移 (px)
     yaw_offset_0 = 0
     #@int id 为 1 的飞镖目标线偏移 (px)

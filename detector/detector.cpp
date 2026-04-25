@@ -169,7 +169,9 @@ namespace detector
 
     int BaseDetector::calculate_yaw_diff()
     {
-        this->_target_x = this->get_image_center_x() + plugin::get_param<int64_t>("Detector.yaw_offset_" + std::to_string(this->_dart_id));
+        const int64_t dart_offset = plugin::get_param<int64_t>("Detector.yaw_offset_" + std::to_string(this->_dart_id));
+        const int64_t total_offset = plugin::get_param<int64_t>("Detector.yaw_offset_total");
+        this->_target_x = this->get_image_center_x() + static_cast<int>(dart_offset + total_offset);
         this->_light_x = this->get_light_x();
         // 灯在线右侧为正
         return this->get_detected_state() ? this->_light_x - this->_target_x : 0;
