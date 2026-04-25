@@ -1,7 +1,13 @@
-#include"detector.hpp"
+#include "detector.hpp"
+
+#include <cmath>
+#include <iomanip>
+#include <sstream>
+
 namespace detector
 {
     BaseDetector::BaseDetector(/* args */)
+        : _dart_id(0), _time(0.0), _yaw_diff(0), _target_x(0), _light_x(0)
     {
     }
     BaseDetector::~BaseDetector()
@@ -12,7 +18,7 @@ namespace detector
     {
         //auto [frame_img, _, time] = data;
         this->_frame_img = data;
-        this->_light_info.is_detected = false;
+        this->_light_info = LightInfo();
         cv::Mat green_channel, binary;
         std::vector<cv::Mat> channels;
 
@@ -44,12 +50,12 @@ namespace detector
                 float radius;
                 cv::minEnclosingCircle(contours[i], center, radius);
 
-                // 计算轮廓的矩
-                cv::Moments m = cv::moments(contours[i]);
-                cv::Point2f centroid(m.m10 / m.m00, m.m01 / m.m00);
-
                 // 计算周长
                 double perimeter = arcLength(contours[i], true);
+                if (perimeter <= 0.0)
+                {
+                    continue;
+                }
 
                 // 计算圆形度 (4π * 面积 / 周长^2)
                 double circularity = 4 * CV_PI * area / (perimeter * perimeter);
@@ -57,11 +63,19 @@ namespace detector
                 // 如果轮廓接近圆形
                 if (circularity > 0.7)
                 {
+                    if (this->_light_info.is_detected && area <= this->_light_info.area)
+                    {
+                        continue;
+                    }
+
+                    const double diameter_px = 2.0 * std::sqrt(area / CV_PI);
 
                     this->_light_info.area = area;
                     this->_light_info.center = center;
                     this->_light_info.contours = contours[i];
+                    this->_light_info.diameter_px = diameter_px;
                     this->_light_info.is_detected = true;
+                    this->update_light_distance(diameter_px);
                     // 圆形度阈值，可以根据实际情况调整
                     // 绘制轮廓
                     // cv::drawContours(result, contours, (int)i, cv::Scalar(0, 255, 0), 2);
@@ -84,6 +98,41 @@ namespace detector
                 }                    
             }
         }
+    }
+
+    void BaseDetector::update_light_distance(double diameter_px)
+    {
+        const double light_diameter_m = plugin::get_param<double>("Detector.LightDiameter");
+        const double fx = plugin::get_param<double>("Detector.CameraFx");
+        const double fy = plugin::get_param<double>("Detector.CameraFy");
+        const double pixel_sigma = plugin::get_param<double>("Detector.PixelSigma");
+
+        double focal_px = 0.0;
+        if (fx > 0.0 && fy > 0.0)
+        {
+            focal_px = 0.5 * (fx + fy);
+        }
+        else if (fx > 0.0)
+        {
+            focal_px = fx;
+        }
+        else if (fy > 0.0)
+        {
+            focal_px = fy;
+        }
+
+        if (diameter_px <= 0.0 || light_diameter_m <= 0.0 || focal_px <= 0.0)
+        {
+            this->_light_info.distance_m = 0.0;
+            this->_light_info.distance_stddev_m = 0.0;
+            return;
+        }
+
+        this->_light_info.distance_m = focal_px * light_diameter_m / diameter_px;
+        this->_light_info.distance_stddev_m =
+            pixel_sigma > 0.0
+                ? (this->_light_info.distance_m * this->_light_info.distance_m * pixel_sigma) / (focal_px * light_diameter_m)
+                : 0.0;
     }
 
     int BaseDetector::calculate_yaw_diff()
@@ -111,6 +160,21 @@ namespace detector
             cv::putText(output_img, area_info,
                         cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y - 50),
                         cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
+            std::ostringstream diameter_stream;
+            diameter_stream << "diameter: " << std::fixed << std::setprecision(1) << this->_light_info.diameter_px << " px";
+            cv::putText(output_img, diameter_stream.str(),
+                        cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y - 10),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 255), 2);
+
+            std::ostringstream distance_stream;
+            distance_stream << "distance: " << std::fixed << std::setprecision(2) << this->_light_info.distance_m << " m";
+            if (this->_light_info.distance_stddev_m > 0.0)
+            {
+                distance_stream << " +/- " << std::setprecision(2) << this->_light_info.distance_stddev_m << " m";
+            }
+            cv::putText(output_img, distance_stream.str(),
+                        cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y + 30),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 255), 2);
             // 添加面积信息
             std::string point_info = 
             "(x,y):("+ 
@@ -119,13 +183,13 @@ namespace detector
             std::to_string(static_cast<int>(this->_light_info.center.y))
             +")";
             cv::putText(output_img, point_info,
-                        cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y - 10),
-                        cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
+                        cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y + 70),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 255), 2);
             // 添加偏航差值信息
             std::string yaw_diff_text = "yaw_diff: " + std::to_string(this->calculate_yaw_diff());
             cv::putText(output_img, yaw_diff_text,
-                        cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y + 30),
-                        cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255), 2);
+                        cv::Point(this->_light_info.center.x + 50, this->_light_info.center.y + 110),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 0, 255), 2);
         }
 
         // 在目标位置绘制垂直线

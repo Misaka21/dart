@@ -19,9 +19,18 @@ namespace detector
             std::vector<cv::Point> contours;
             cv::Point2f center;
             double area;
+            double diameter_px;
+            double distance_m;
+            double distance_stddev_m;
             bool is_detected;
             LightInfo()
-                : contours(), center(0.0f, 0.0f), area(0.0), is_detected(false) {}
+                : contours(),
+                  center(0.0f, 0.0f),
+                  area(0.0),
+                  diameter_px(0.0),
+                  distance_m(0.0),
+                  distance_stddev_m(0.0),
+                  is_detected(false) {}
         } _light_info;
         int _yaw_diff;
         int get_image_center_x()
@@ -34,6 +43,7 @@ namespace detector
         }
         int _target_x;
         int _light_x;
+        void update_light_distance(double diameter_px);
 
     public:
         BaseDetector(/* args */);
@@ -44,6 +54,10 @@ namespace detector
         {
             return this->_light_info.is_detected;
         };
+        double get_light_distance_m()
+        {
+            return this->_light_info.distance_m;
+        }
         void draw(cv::Mat &output_img);
     };
 }

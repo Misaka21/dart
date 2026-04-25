@@ -2,6 +2,16 @@
 MinArea = 1000
 MaxArea =90000 
 Threshold=200
+
+# 绿灯测距参数
+# LightDiameter: 绿灯真实直径，单位 m
+# CameraFx / CameraFy: 相机标定得到的焦距，单位 px，必须和 detector 输入图像尺寸一致
+# PixelSigma: detector 估计直径的像素标准差，用来显示距离标准差
+LightDiameter = 0.050
+CameraFx = 1200.0
+CameraFy = 1200.0
+PixelSigma = 2.0
+
 yaw_offset.0 =0
 
 yaw_offset.1 =132
