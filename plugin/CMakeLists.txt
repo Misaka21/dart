@@ -10,9 +10,14 @@ set(plugin_visualizer_src
     visualizer/visualizer_node.cpp
 )
 
+set(plugin_telemetry_src
+    telemetry/telemetry.cpp
+)
+
 add_library(${lib_name} STATIC
     ${plugin_param_src}
     ${plugin_visualizer_src}
+    ${plugin_telemetry_src}
 )
 
 target_include_directories(${lib_name} PUBLIC
@@ -26,6 +31,10 @@ target_link_libraries(${lib_name} PUBLIC
     Eigen3::Eigen
     fmt::fmt
 )
+
+if(ENABLE_WEBVIEW)
+    target_link_libraries(${lib_name} PUBLIC pybind11::embed)
+endif()
 
 add_subdirectory(rmcv_bag)
 

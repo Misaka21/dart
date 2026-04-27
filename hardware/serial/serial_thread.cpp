@@ -6,6 +6,7 @@
 #include "plugin/param/static_config.hpp"
 #include "plugin/rerun/rmcv_rerun.hpp"
 #include "plugin/stats/fps_stats.hpp"
+#include "plugin/telemetry/telemetry.hpp"
 #include "protocol/uart_protocol.hpp"
 #ifdef HAVE_LIBUSB_1_0
 #include "protocol/usb_bulk_protocol.hpp"
@@ -253,6 +254,10 @@ void serial_receiver_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
                         current_should_detect->store(receive_data.should_detect);
                         current_should_detect_time_us->store(recv_time_us);
 
+                        static const telemetry::Series serial_should_detect("serial/should_detect");
+                        static const telemetry::Series serial_dart_number("serial/dart_number");
+                        serial_should_detect.scalar(receive_data.should_detect);
+                        serial_dart_number.scalar(static_cast<int>(receive_data.dart_number));
                         rr::scalar("serial/should_detect", receive_data.should_detect);
                         rr::scalar("serial/dart_number", static_cast<int>(receive_data.dart_number));
 

@@ -45,6 +45,7 @@ namespace detector
 
                     // 计算偏航差值
                     detector.calculate_yaw_diff();
+                    detector.publish_telemetry();
 
 
                     cv::Mat debug_img = camera_frame.clone();

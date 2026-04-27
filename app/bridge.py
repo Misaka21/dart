@@ -8,6 +8,11 @@ import Message_cvMat
 import cv2
 import time
 
+try:
+    import Telemetry
+except ImportError:
+    Telemetry = None
+
 
 def get_range_params_info():
     mutparams = []
@@ -94,3 +99,23 @@ def get_cvmat_jpegcode(name, print_fps=True):
             
             # 生成帧数据
             yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + jpeg_code + b'\r\n\r\n'
+
+
+def poll_telemetry(after_seq=0, max_samples=4096):
+    if Telemetry is None:
+        return {
+            "enabled": False,
+            "series": [],
+            "samples": [],
+            "next_seq": int(after_seq),
+            "reset": False,
+            "publish_interval_ms": 100,
+            "time_window_s": 10.0,
+        }
+    return Telemetry.poll(int(after_seq), int(max_samples))
+
+
+def get_telemetry_publish_interval_s():
+    if Telemetry is None:
+        return 0.1
+    return max(0.005, Telemetry.publish_interval_ms() / 1000.0)

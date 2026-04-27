@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "plugin/telemetry/telemetry.hpp"
+
 namespace
 {
     int clamp_to_image_x(int x, const cv::Mat &img)
@@ -288,6 +290,50 @@ namespace detector
         // 灯在线右侧为正
         this->_yaw_diff = this->get_detected_state() ? this->_light_x - this->_target_x : 0;
         return this->_yaw_diff;
+    }
+
+    void BaseDetector::publish_telemetry()
+    {
+        static const telemetry::Series should_detect("detector/should_detect");
+        static const telemetry::Series detected("detector/detected");
+        static const telemetry::Series dart_number("detector/dart_number");
+        static const telemetry::Series dart_id("detector/dart_id");
+        static const telemetry::Series image_center_x("detector/image_center_x");
+        static const telemetry::Series dart_target_x("detector/dart_target_x");
+        static const telemetry::Series final_target_x("detector/final_target_x");
+        static const telemetry::Series yaw_offset_id("detector/yaw_offset_id");
+        static const telemetry::Series yaw_offset_total("detector/yaw_offset_total");
+        static const telemetry::Series yaw_diff_px("detector/yaw_diff_px");
+        static const telemetry::Series light_x("detector/light_x");
+        static const telemetry::Series light_y("detector/light_y");
+        static const telemetry::Series light_area("detector/light_area");
+        static const telemetry::Series light_diameter_px("detector/light_diameter_px");
+        static const telemetry::Series light_distance_m("detector/light_distance_m");
+        static const telemetry::Series light_distance_stddev_m("detector/light_distance_stddev_m");
+
+        const int center_x = this->get_image_center_x();
+        const int dart_target = center_x + this->_dart_yaw_offset;
+
+        should_detect.scalar(this->_should_detect);
+        detected.scalar(this->_light_info.is_detected);
+        dart_number.scalar(this->_dart_number);
+        dart_id.scalar(this->_dart_id);
+        image_center_x.scalar(center_x);
+        dart_target_x.scalar(dart_target);
+        final_target_x.scalar(this->_target_x);
+        yaw_offset_id.scalar(this->_dart_yaw_offset);
+        yaw_offset_total.scalar(this->_total_yaw_offset);
+        yaw_diff_px.scalar(this->_yaw_diff);
+
+        if (this->_light_info.is_detected)
+        {
+            light_x.scalar(static_cast<double>(this->_light_info.center.x));
+            light_y.scalar(static_cast<double>(this->_light_info.center.y));
+            light_area.scalar(this->_light_info.area);
+            light_diameter_px.scalar(this->_light_info.diameter_px);
+            light_distance_m.scalar(this->_light_info.distance_m);
+            light_distance_stddev_m.scalar(this->_light_info.distance_stddev_m);
+        }
     }
 
     void BaseDetector::draw(cv::Mat &output_img)

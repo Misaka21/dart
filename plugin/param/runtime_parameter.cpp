@@ -6,6 +6,7 @@
 // C++ system headers
 #include <chrono>
 #include <memory>
+#include <type_traits>
 
 // Third-party library headers (embedded)
 #include "thirdparty/toml.hpp"
@@ -13,6 +14,7 @@
 // Project headers
 #include "plugin/debug/logger.hpp"
 #include "plugin/rerun/rmcv_rerun.hpp"
+#include "plugin/telemetry/telemetry.hpp"
 #include "umt/ObjManager.hpp"
 
 namespace runtime_param {
@@ -122,12 +124,16 @@ namespace runtime_param {
                     // 记录参数变化到 Rerun 时间线
                     std::visit([&prefix](auto&& v) {
                         using T = std::decay_t<decltype(v)>;
+                        const std::string path = "params/" + prefix;
                         if constexpr (std::is_same_v<T, double>) {
-                            rr::scalar("params/" + prefix, v);
+                            telemetry::scalar(path, v);
+                            rr::scalar(path, v);
                         } else if constexpr (std::is_same_v<T, int64_t>) {
-                            rr::scalar("params/" + prefix, static_cast<int>(v));
+                            telemetry::scalar(path, static_cast<int>(v));
+                            rr::scalar(path, static_cast<int>(v));
                         } else if constexpr (std::is_same_v<T, bool>) {
-                            rr::scalar("params/" + prefix, v);
+                            telemetry::scalar(path, v);
+                            rr::scalar(path, v);
                         }
                         // string/vector 忽略
                     }, res);

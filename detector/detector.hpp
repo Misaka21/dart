@@ -64,6 +64,7 @@ namespace detector
         {
             return this->_light_info.distance_m;
         }
+        void publish_telemetry();
         void draw(cv::Mat &output_img);
     };
 }

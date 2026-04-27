@@ -1,12 +1,37 @@
+# 本文件严格区分参数的数据类型，比如 10.0 不能改成 10
+
 [Recorder]
-enable_recording = false
-record_raw_video = true
-record_imu_csv = true
-camera_fps = 200.0
-video_codec = "MJPG"
-sample_interval = 3
+    #@bool 是否启用录制，比赛模式会强制录制
+    enable_recording = false
+    #@bool 是否录制原始视频
+    record_raw_video = true
+    #@bool 是否录制 IMU/串口数据 CSV
+    record_imu_csv = true
+    #@double 相机采集帧率 (fps)，用于计算录制视频帧率
+    camera_fps = 200.0
+    #@string 原始视频编码 FourCC
+    video_codec = "MJPG"
+    #@int 采样间隔，1 表示每帧都录制
+    sample_interval = 3
 
 [Rerun]
-enable = false
-mode = "serve"
-port = 9876
+    #@bool 是否启用 Rerun 可视化记录
+    enable = false
+    #@string Rerun 启动模式: "serve" 或 "spawn"
+    mode = "serve"
+    #@int serve 模式下的 gRPC 端口
+    port = 9876
+
+[Telemetry]
+    #@bool 是否启用网页曲线遥测
+    enable = true
+    #@int 全局样本缓存容量，满后覆盖最旧样本
+    sample_capacity = 32768
+    #@int 最大曲线数量
+    max_series = 512
+    #@int 网页推送频率 (Hz)
+    publish_hz = 30
+    #@int 每次推送的最大样本数
+    max_batch_samples = 4096
+    #@double 网页默认显示时间窗口 (s)
+    default_time_window = 10.0

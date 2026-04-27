@@ -1,24 +1,506 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>视频流</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RMCV Debugger</title>
     <style>
+        :root {
+            --bg: #f4f5f7;
+            --panel: #ffffff;
+            --line: #d8dde5;
+            --text: #1d2430;
+            --muted: #6d7786;
+            --chart-bg: #101317;
+            --chart-grid: #2c333d;
+            --chart-text: #c7d0dd;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #FFF;
+            min-height: 100vh;
+            color: var(--text);
+            background: var(--bg);
+            font-family: Arial, "Noto Sans SC", sans-serif;
         }
-        img {
-            max-width: 100%;
-            max-height: 100vh;
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 420px;
+            gap: 12px;
+            height: 100vh;
+            padding: 12px;
+        }
+
+        .video-pane,
+        .telemetry-pane {
+            min-width: 0;
+            min-height: 0;
+            border: 1px solid var(--line);
+            background: var(--panel);
+        }
+
+        .video-pane {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background: #050607;
+        }
+
+        .video-pane img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .telemetry-pane {
+            display: grid;
+            grid-template-rows: auto minmax(240px, 1fr) minmax(180px, 36vh);
+            overflow: hidden;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .title {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .title strong {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .title span {
+            font-size: 12px;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+        }
+
+        select,
+        button {
+            height: 30px;
+            border: 1px solid #c8ced8;
+            border-radius: 6px;
+            background: #fff;
+            color: var(--text);
+            font-size: 13px;
+        }
+
+        select {
+            padding: 0 8px;
+        }
+
+        button {
+            min-width: 34px;
+            padding: 0 10px;
+            cursor: pointer;
+        }
+
+        .chart-wrap {
+            position: relative;
+            min-height: 0;
+            background: var(--chart-bg);
+        }
+
+        #telemetryChart {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .series-pane {
+            min-height: 0;
+            border-top: 1px solid var(--line);
+            overflow: auto;
+            background: #fbfcfe;
+        }
+
+        .series-row {
+            display: grid;
+            grid-template-columns: 22px minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            min-height: 32px;
+            padding: 6px 12px;
+            border-bottom: 1px solid #edf0f5;
+            font-size: 12px;
+        }
+
+        .series-row input {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+        }
+
+        .series-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .series-value {
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 980px) {
+            .layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(320px, 58vh) minmax(360px, 42vh);
+            }
+
+            .telemetry-pane {
+                grid-template-rows: auto minmax(180px, 1fr) 150px;
+            }
         }
     </style>
 </head>
 <body>
-    <img src="{{ url_for('video_feed', name=video_name) }}" alt="视频流">
+    <div class="layout">
+        <main class="video-pane">
+            <img src="{{ url_for('video_feed', name=video_name) }}" alt="video">
+        </main>
+
+        <aside class="telemetry-pane">
+            <div class="toolbar">
+                <div class="title">
+                    <strong>Telemetry</strong>
+                    <span id="telemetryStatus">connecting</span>
+                </div>
+                <div class="controls">
+                    <select id="timeWindow">
+                        <option value="5">5s</option>
+                        <option value="10" selected>10s</option>
+                        <option value="30">30s</option>
+                        <option value="60">60s</option>
+                    </select>
+                    <button id="pauseButton" type="button">Ⅱ</button>
+                    <button id="clearButton" type="button">×</button>
+                </div>
+            </div>
+
+            <div class="chart-wrap">
+                <canvas id="telemetryChart"></canvas>
+            </div>
+
+            <div id="seriesList" class="series-pane"></div>
+        </aside>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("telemetryChart");
+        const ctx = canvas.getContext("2d");
+        const statusEl = document.getElementById("telemetryStatus");
+        const seriesListEl = document.getElementById("seriesList");
+        const timeWindowEl = document.getElementById("timeWindow");
+        const pauseButton = document.getElementById("pauseButton");
+        const clearButton = document.getElementById("clearButton");
+
+        const palette = [
+            "#00c2ff", "#ff4fd8", "#f5b700", "#36d399",
+            "#ff6b6b", "#b17cff", "#4dd4ac", "#ff9f1c",
+            "#9be564", "#5c7cfa", "#f06595", "#22b8cf"
+        ];
+        const preferred = new Set([
+            "detector/yaw_diff_px",
+            "detector/light_distance_m",
+            "detector/light_diameter_px",
+            "serial/dart_number",
+            "serial/should_detect"
+        ]);
+        const maxPointsPerSeries = 24000;
+        const series = new Map();
+        let latestTimeUs = 0;
+        let paused = false;
+        let userChangedSelection = false;
+        let lastSeriesRender = 0;
+
+        function colorForId(id) {
+            return palette[id % palette.length];
+        }
+
+        function ensureSeries(id, path) {
+            if (series.has(id)) {
+                const item = series.get(id);
+                item.path = path;
+                return item;
+            }
+
+            const visibleCount = Array.from(series.values()).filter(item => item.visible).length;
+            const item = {
+                id,
+                path,
+                color: colorForId(id),
+                visible: !userChangedSelection && (preferred.has(path) || visibleCount < 4),
+                t: [],
+                v: [],
+                latest: NaN
+            };
+            series.set(id, item);
+            return item;
+        }
+
+        function clearSamples() {
+            for (const item of series.values()) {
+                item.t.length = 0;
+                item.v.length = 0;
+                item.latest = NaN;
+            }
+            latestTimeUs = 0;
+        }
+
+        function ingest(payload) {
+            statusEl.textContent = payload.enabled ? "streaming" : "disabled";
+            if (payload.time_window_s && !timeWindowEl.dataset.ready) {
+                timeWindowEl.value = String(Math.round(payload.time_window_s));
+                timeWindowEl.dataset.ready = "1";
+            }
+            if (payload.reset) {
+                clearSamples();
+            }
+            for (const pair of payload.series || []) {
+                ensureSeries(pair[0], pair[1]);
+            }
+            if (!paused) {
+                for (const sample of payload.samples || []) {
+                    const item = series.get(sample[1]);
+                    if (!item) continue;
+                    item.t.push(sample[2]);
+                    item.v.push(sample[3]);
+                    item.latest = sample[3];
+                    latestTimeUs = Math.max(latestTimeUs, sample[2]);
+                }
+                for (const item of series.values()) {
+                    if (item.t.length > maxPointsPerSeries) {
+                        const removeCount = item.t.length - maxPointsPerSeries;
+                        item.t.splice(0, removeCount);
+                        item.v.splice(0, removeCount);
+                    }
+                }
+            }
+        }
+
+        function lowerBound(values, target) {
+            let lo = 0;
+            let hi = values.length;
+            while (lo < hi) {
+                const mid = (lo + hi) >> 1;
+                if (values[mid] < target) lo = mid + 1;
+                else hi = mid;
+            }
+            return lo;
+        }
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            const width = Math.max(1, Math.floor(rect.width * dpr));
+            const height = Math.max(1, Math.floor(rect.height * dpr));
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function drawChart() {
+            resizeCanvas();
+            const rect = canvas.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = "#101317";
+            ctx.fillRect(0, 0, width, height);
+
+            const pad = { left: 54, right: 12, top: 18, bottom: 30 };
+            const plotW = Math.max(1, width - pad.left - pad.right);
+            const plotH = Math.max(1, height - pad.top - pad.bottom);
+            const visible = Array.from(series.values()).filter(item => item.visible && item.t.length > 0);
+            const windowUs = Number(timeWindowEl.value) * 1000000;
+            const maxT = latestTimeUs || 0;
+            const minT = Math.max(0, maxT - windowUs);
+
+            ctx.strokeStyle = "#2c333d";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.top + (plotH * i / 4);
+                ctx.moveTo(pad.left, y);
+                ctx.lineTo(width - pad.right, y);
+            }
+            for (let i = 0; i <= 5; i++) {
+                const x = pad.left + (plotW * i / 5);
+                ctx.moveTo(x, pad.top);
+                ctx.lineTo(x, height - pad.bottom);
+            }
+            ctx.stroke();
+
+            let minV = Infinity;
+            let maxV = -Infinity;
+            for (const item of visible) {
+                const start = lowerBound(item.t, minT);
+                for (let i = start; i < item.t.length; i++) {
+                    const value = item.v[i];
+                    if (value < minV) minV = value;
+                    if (value > maxV) maxV = value;
+                }
+            }
+
+            if (!Number.isFinite(minV) || !Number.isFinite(maxV)) {
+                ctx.fillStyle = "#c7d0dd";
+                ctx.font = "13px Arial";
+                ctx.fillText("waiting for samples", pad.left, pad.top + 22);
+                requestAnimationFrame(drawChart);
+                return;
+            }
+
+            if (Math.abs(maxV - minV) < 1e-6) {
+                maxV += 1;
+                minV -= 1;
+            } else {
+                const margin = (maxV - minV) * 0.12;
+                maxV += margin;
+                minV -= margin;
+            }
+
+            const xOf = t => pad.left + ((t - minT) / windowUs) * plotW;
+            const yOf = v => pad.top + (1 - (v - minV) / (maxV - minV)) * plotH;
+
+            for (const item of visible) {
+                const start = lowerBound(item.t, minT);
+                if (start >= item.t.length) continue;
+                const count = item.t.length - start;
+                const step = Math.max(1, Math.floor(count / Math.max(1, plotW * 2)));
+
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                let moved = false;
+                for (let i = start; i < item.t.length; i += step) {
+                    const x = xOf(item.t[i]);
+                    const y = yOf(item.v[i]);
+                    if (!moved) {
+                        ctx.moveTo(x, y);
+                        moved = true;
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = "#c7d0dd";
+            ctx.font = "12px Arial";
+            ctx.fillText(maxV.toFixed(2), 8, pad.top + 4);
+            ctx.fillText(minV.toFixed(2), 8, height - pad.bottom);
+            ctx.fillText("-" + timeWindowEl.value + "s", pad.left, height - 9);
+            ctx.fillText("now", width - pad.right - 24, height - 9);
+
+            let labelY = pad.top + 14;
+            for (const item of visible.slice(0, 6)) {
+                ctx.fillStyle = item.color;
+                ctx.fillText(item.path + " " + formatValue(item.latest), pad.left + 8, labelY);
+                labelY += 18;
+            }
+
+            requestAnimationFrame(drawChart);
+        }
+
+        function formatValue(value) {
+            if (!Number.isFinite(value)) return "--";
+            if (Math.abs(value) >= 100) return value.toFixed(0);
+            if (Math.abs(value) >= 10) return value.toFixed(1);
+            return value.toFixed(3);
+        }
+
+        function renderSeriesList(force = false) {
+            const now = performance.now();
+            if (!force && now - lastSeriesRender < 400) return;
+            lastSeriesRender = now;
+
+            const fragment = document.createDocumentFragment();
+            const items = Array.from(series.values()).sort((a, b) => a.path.localeCompare(b.path));
+            for (const item of items) {
+                const row = document.createElement("label");
+                row.className = "series-row";
+
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = item.visible;
+                checkbox.addEventListener("change", () => {
+                    item.visible = checkbox.checked;
+                    userChangedSelection = true;
+                    renderSeriesList(true);
+                });
+
+                const name = document.createElement("span");
+                name.className = "series-name";
+                name.style.color = item.color;
+                name.textContent = item.path;
+
+                const value = document.createElement("span");
+                value.className = "series-value";
+                value.textContent = formatValue(item.latest);
+
+                row.appendChild(checkbox);
+                row.appendChild(name);
+                row.appendChild(value);
+                fragment.appendChild(row);
+            }
+
+            seriesListEl.replaceChildren(fragment);
+        }
+
+        pauseButton.addEventListener("click", () => {
+            paused = !paused;
+            pauseButton.textContent = paused ? "▶" : "Ⅱ";
+        });
+
+        clearButton.addEventListener("click", () => {
+            clearSamples();
+        });
+
+        const events = new EventSource("/api/telemetry/stream");
+        events.onmessage = event => {
+            try {
+                ingest(JSON.parse(event.data));
+                renderSeriesList();
+            } catch (error) {
+                statusEl.textContent = "parse error";
+            }
+        };
+        events.onerror = () => {
+            statusEl.textContent = "reconnecting";
+        };
+
+        new ResizeObserver(resizeCanvas).observe(canvas);
+        requestAnimationFrame(drawChart);
+    </script>
 </body>
 </html>

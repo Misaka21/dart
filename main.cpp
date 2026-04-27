@@ -4,6 +4,7 @@
 #include <iostream>
 #include "plugin/param/parameter.hpp"
 #include "plugin/rmcv_bag/recorder_node.hpp"
+#include "plugin/telemetry/telemetry.hpp"
 #include "hardware/hardware_node.hpp"
 #include "detector/detector_node.hpp"
 #include "umt/umt.hpp"
@@ -21,6 +22,7 @@ int main() {
 
 	// 初始化日志会话
 	debug::init_session();
+	telemetry::init_from_config();
 
 	//////////////实时参数加载线程////////////////
 	fmt::print(fmt::fg(fmt::color::gold), "======================Loading parameters======================\n");
@@ -55,5 +57,6 @@ int main() {
 
 	int ret = Py_Main(argc, const_cast<wchar_t **>(w_argv));
 	app_running->get() = false;
+	telemetry::shutdown();
 	return ret;
 }

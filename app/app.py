@@ -1,6 +1,8 @@
-from flask import Flask, Response, render_template
+from flask import Flask, Response, render_template, request, stream_with_context
 import argparse
 import bridge
+import json
+import time
 
 app = Flask(__name__)
 
@@ -17,6 +19,28 @@ def index():
 @app.route('/video_feed/<name>')
 def video_feed(name):
     return Response(bridge.get_cvmat_jpegcode(name), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/telemetry/stream')
+def telemetry_stream():
+    try:
+        start_seq = int(request.args.get("after_seq", "0"))
+    except ValueError:
+        start_seq = 0
+
+    @stream_with_context
+    def generate():
+        last_seq = start_seq
+        while True:
+            payload = bridge.poll_telemetry(last_seq)
+            last_seq = int(payload.get("next_seq", last_seq))
+            yield "data: " + json.dumps(payload, separators=(",", ":")) + "\n\n"
+            time.sleep(bridge.get_telemetry_publish_interval_s())
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    return Response(generate(), mimetype='text/event-stream', headers=headers)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
