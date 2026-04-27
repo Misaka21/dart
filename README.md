@@ -12,6 +12,7 @@
 - [环境准备](#环境准备)
 - [编译](#编译)
 - [运行](#运行)
+- [相机内参标定](#相机内参标定)
 - [配置说明](#配置说明)
 - [调试和日志](#调试和日志)
 - [开发入门](#开发入门)
@@ -25,6 +26,7 @@
 | --- | --- |
 | `hardware` | 读取相机图像，读取或模拟串口数据，并把两者同步成一帧 `sync_frame` |
 | `detector` | 对图像做绿色通道阈值分割，寻找圆形绿色灯，计算目标偏航误差 |
+| `tools/calibration.cpp` | 棋盘格相机内参标定工具，输出 `param.toml` 需要的 `camera_fx/camera_fy` |
 | `plugin/param` | 读取 `asset/param.toml`，支持运行时热重载部分参数 |
 | `plugin/rmcv_bag` | 按配置录制原始视频和 IMU/串口 CSV 数据 |
 | `plugin/telemetry` | 收集遥测数据，供网页曲线显示 |
@@ -50,6 +52,8 @@
 ├── detector/
 │   ├── detector.cpp            # 绿色灯检测、距离估计、偏航误差计算
 │   └── detector_node.hpp       # 订阅硬件帧并发布调试图像
+├── tools/
+│   └── calibration.cpp         # 相机内参标定工具
 ├── plugin/
 │   ├── param/                  # TOML 参数读取
 │   ├── rmcv_bag/               # 视频和 CSV 录制
@@ -226,6 +230,63 @@ allow_fire = true
 ```
 
 这表示程序会假装电控已经发送了“允许检测”的状态。初学者可以先保持这个配置，等相机和检测跑通后再接真实串口。
+
+## 相机内参标定
+
+`Detector.camera_fx` 和 `Detector.camera_fy` 来自相机内参标定。工程内置了 `RobotCVCalibration` 工具，可以用棋盘格采集图像并计算焦距。
+
+先编译标定工具：
+
+```bash
+cmake --build build --target RobotCVCalibration --parallel
+```
+
+从 `build` 目录运行：
+
+```bash
+cd build
+./RobotCVCalibration
+```
+
+默认标定板参数来自旧工具：
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--board-width` | `11` | 棋盘格内角点列数 |
+| `--board-height` | `8` | 棋盘格内角点行数 |
+| `--square-size-mm` | `20.0` | 单个棋盘格边长，单位 mm |
+| `--min-images` | `10` | 至少采集多少张图像后才能标定 |
+| `--light-diameter-m` | `0.050` | 绿灯真实直径，单位 m |
+
+如果你的棋盘格或绿灯尺寸不同，可以这样运行：
+
+```bash
+./RobotCVCalibration --board-width 11 --board-height 8 --square-size-mm 20.0 --light-diameter-m 0.050
+```
+
+交互按键：
+
+| 按键 | 作用 |
+| --- | --- |
+| `Space` | 当前画面检测到棋盘格时采集一张图 |
+| `c` | 使用已采集图像开始标定 |
+| `s` | 保存已采集图像 |
+| `u` | 撤销上一张采集图 |
+| `q` / `Esc` | 退出 |
+
+标定完成后，终端会输出一段可以直接复制到 `asset/param.toml` 的内容：
+
+```toml
+    # 绿灯直径测距
+    #@double 绿灯真实直径 (m)
+    light_diameter = 0.050
+    #@double 相机 x 方向焦距 (px)，需与 detector 输入图像尺寸一致
+    camera_fx = 标定得到的 fx
+    #@double 相机 y 方向焦距 (px)，需与 detector 输入图像尺寸一致
+    camera_fy = 标定得到的 fy
+```
+
+`light_diameter` 是绿灯的实际物理直径，标定工具不会从棋盘格自动推导它；请按实物测量结果填写。`camera_fx` 和 `camera_fy` 必须和 detector 实际输入图像尺寸一致，如果后续修改了相机分辨率或裁剪方式，需要重新标定或按比例换算。
 
 ## 配置说明
 
@@ -556,4 +617,3 @@ app.run(host="0.0.0.0", port=3000, threaded=True)
 6. 调整 `asset/param.toml` 里的 `Detector.threshold`、`min_area`、`max_area`，让绿色目标灯稳定被识别。
 7. 接入真实串口，把 `Serial.use_fake_serial_data` 改为 `false`，配置正确的串口路径。
 8. 根据实测结果调整每枚飞镖的 `yaw_offset_*`。
-

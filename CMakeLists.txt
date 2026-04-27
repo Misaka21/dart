@@ -126,3 +126,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     # 系统库
     Threads::Threads
 )
+
+# ============================================================================
+# 工具程序
+# ============================================================================
+add_executable(RobotCVCalibration
+    tools/calibration.cpp
+)
+
+target_include_directories(RobotCVCalibration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+target_link_libraries(RobotCVCalibration PRIVATE
+    plugin
+    hardware
+    fmt::fmt
+    ${OpenCV_LIBS}
+    Threads::Threads
+)
