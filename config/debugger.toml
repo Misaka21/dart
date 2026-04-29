@@ -3,13 +3,15 @@
 [Recorder]
     #@bool 是否启用录制，比赛模式会强制录制
     enable_recording = false
-    #@bool 是否录制原始视频
-    record_raw_video = true
+    #@bool 是否录制原始相机视频
+    record_raw_video = false
+    #@bool 是否录制 detector 绘制后的可视化视频
+    record_debug_video = true
     #@bool 是否录制 IMU/串口数据 CSV
     record_imu_csv = true
     #@double 相机采集帧率 (fps)，用于计算录制视频帧率
     camera_fps = 200.0
-    #@string 原始视频编码 FourCC
+    #@string 视频编码 FourCC
     video_codec = "MJPG"
     #@int 采样间隔，1 表示每帧都录制
     sample_interval = 3

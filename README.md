@@ -29,7 +29,7 @@
 | `detector` | 对图像做绿色通道阈值分割，寻找圆形绿色灯，计算目标偏航误差 |
 | `test/test_calibration.cpp` | 棋盘格相机内参标定工具，输出 `param.toml` 需要的 `camera_fx/camera_fy` |
 | `plugin/param` | 读取 `config/param.toml`，支持运行时热重载部分参数 |
-| `plugin/rmcv_bag` | 按配置录制原始视频和 IMU/串口 CSV 数据 |
+| `plugin/rmcv_bag` | 按配置录制 detector 可视化视频、原始视频和 IMU/串口 CSV 数据 |
 | `plugin/telemetry` | 收集遥测数据，供网页曲线显示 |
 | `app` | Flask 网页调试界面，默认端口 `3000` |
 | `scripts` | systemd 自启动、screen 看门狗和清理脚本 |
@@ -249,7 +249,7 @@ cd build
 ./dart2026 --help
 ```
 
-`--match` 会设置全局 `match_mode = true`。录制节点会忽略 `Recorder.enable_recording = false`，强制录制原始视频和串口/IMU CSV。
+`--match` 会设置全局 `match_mode = true`。录制节点会忽略 `Recorder.enable_recording = false`，强制录制 detector 可视化视频和串口/IMU CSV。
 
 更推荐通过 `scripts/watchdog.sh` 启动，它会创建日志会话目录、启动 screen、监控心跳并在异常时重启：
 
@@ -420,10 +420,11 @@ baudrate = 115200
 | --- | --- |
 | `Recorder.enable_recording` | 是否启用录制 |
 | `Recorder.record_raw_video` | 是否录制原始视频 |
+| `Recorder.record_debug_video` | 是否录制 detector 绘制后的可视化视频 |
 | `Recorder.record_imu_csv` | 是否录制 IMU/串口 CSV |
 | `Recorder.camera_fps` | 录制视频使用的相机帧率 |
 | `Recorder.sample_interval` | 采样间隔，`1` 表示每帧都录 |
-| `--match` / `watchdog.sh --match` | 比赛模式会强制录制 raw 和 imu |
+| `--match` / `watchdog.sh --match` | 比赛模式会强制录制 debug 和 imu |
 | `Telemetry.enable` | 是否启用网页遥测 |
 | `Telemetry.publish_hz` | 网页曲线推送频率 |
 | `Telemetry.default_time_window` | 网页默认显示时间窗口，单位秒 |
@@ -435,7 +436,7 @@ baudrate = 115200
 log/2026-04-27_20-30-00/
 ├── run.log
 ├── config/
-├── raw_001.mkv
+├── debug_001.mkv
 └── imu_001.csv
 ```
 
@@ -457,7 +458,8 @@ log/<启动时间>/
 | `heartbeat` | 内部 watchdog 写出的节点心跳 |
 | `resources.csv` | 外部看门狗记录的进程和系统资源 |
 | `config/` | 启动时的 TOML 配置快照 |
-| `raw_*.mkv` | 录制视频，取决于 `debugger.toml` |
+| `debug_*.mkv` | detector 绘制后的可视化视频，比赛模式强制录制 |
+| `raw_*.mkv` | 原始相机视频，仅 `Recorder.record_raw_video=true` 时录制 |
 | `imu_*.csv` | 录制串口/IMU 数据，取决于 `debugger.toml` |
 
 判断是否启动成功可以看这些现象：

@@ -19,7 +19,7 @@ sudo ./install_service.sh
 
 `watchdog.sh --match` 会把 `--match` 传给 `build/dart2026`。主程序会设置全局 `match_mode = true`，录制节点会忽略 `Recorder.enable_recording = false`，强制录制：
 
-- `raw_*.mkv`
+- `debug_*.mkv`
 - `imu_*.csv`
 
 开机自启的 `dart2026.service` 默认使用：
@@ -61,6 +61,6 @@ log/
 │   ├── heartbeat
 │   ├── resources.csv
 │   ├── config/
-│   ├── raw_*.mkv
+│   ├── debug_*.mkv
 │   └── imu_*.csv
 ```

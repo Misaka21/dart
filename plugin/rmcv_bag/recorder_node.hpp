@@ -4,10 +4,12 @@
  *
  * 订阅:
  *   - Message<hardware::SyncFrame> "sync_frame" (原始帧 + 串口数据)
+ *   - Message<cv::Mat> "Detector_Debug_Image" (detector 绘制后的可视化帧)
  *
  * 输出文件 (保存到会话目录):
- *   - raw.mkv: 原始相机帧
- *   - imu.csv: 串口 IMU 数据
+ *   - debug_*.mkv: detector 可视化视频
+ *   - raw_*.mkv: 原始相机帧 (仅 record_raw_video=true 时)
+ *   - imu_*.csv: 串口 IMU 数据
  */
 
 #ifndef RMCV_BAG_RECORDER_NODE_HPP
@@ -19,7 +21,7 @@ namespace rmcv_bag {
  * @brief 启动录制节点
  *
  * 录制节点独立运行，通过运行时参数控制录制开关。
- * 配置项位于 config/recorder.toml 的 [Recorder] 节。
+ * 配置项位于 config/debugger.toml 的 [Recorder] 节。
  */
 void start_recorder_node();
 

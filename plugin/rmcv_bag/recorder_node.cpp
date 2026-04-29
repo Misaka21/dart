@@ -13,6 +13,7 @@
 #include <thread>
 
 #include <fmt/format.h>
+#include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
 #include "hardware/hardware_node.hpp"
@@ -60,7 +61,8 @@ std::string get_unique_filepath(const std::string& dir,
 
 struct RecorderConfig {
     bool enable_recording = false;  // 是否启用录制
-    bool record_raw_video = true;
+    bool record_raw_video = false;
+    bool record_debug_video = true;
     bool record_imu_csv = true;
     double camera_fps = 200.0;
     std::string video_codec = "MJPG";
@@ -75,6 +77,7 @@ struct RecorderConfig {
         auto table = static_param::parse_file("debugger.toml");
         cfg.enable_recording = static_param::get_param<bool>(table, "Recorder", "enable_recording");
         cfg.record_raw_video = static_param::get_param<bool>(table, "Recorder", "record_raw_video");
+        cfg.record_debug_video = static_param::get_param<bool>(table, "Recorder", "record_debug_video");
         cfg.record_imu_csv = static_param::get_param<bool>(table, "Recorder", "record_imu_csv");
         cfg.camera_fps = static_param::get_param<double>(table, "Recorder", "camera_fps");
         cfg.video_codec = static_param::get_param<std::string>(table, "Recorder", "video_codec");
@@ -164,6 +167,25 @@ private:
     cv::VideoWriter writer_;
 };
 
+cv::Mat make_video_frame(const cv::Mat& frame) {
+    if (frame.channels() == 3) {
+        cv::Mat bgr;
+        cv::cvtColor(frame, bgr, cv::COLOR_RGB2BGR);
+        return bgr;
+    }
+    if (frame.channels() == 4) {
+        cv::Mat bgr;
+        cv::cvtColor(frame, bgr, cv::COLOR_RGBA2BGR);
+        return bgr;
+    }
+    if (frame.channels() == 1) {
+        cv::Mat bgr;
+        cv::cvtColor(frame, bgr, cv::COLOR_GRAY2BGR);
+        return bgr;
+    }
+    return frame;
+}
+
 // ============================================================================
 // Recorder Node
 // ============================================================================
@@ -179,10 +201,10 @@ void start_recorder_node() {
     auto is_match_mode = [&]() { return match_mode_obj && match_mode_obj->get(); };
 
     debug::print(debug::PrintMode::INFO, "RecorderNode",
-        "Config: raw={} imu={} fps={:.1f} codec={} sample=1/{}{}",
-        config.record_raw_video, config.record_imu_csv,
+        "Config: raw={} debug={} imu={} fps={:.1f} codec={} sample=1/{}{}",
+        config.record_raw_video, config.record_debug_video, config.record_imu_csv,
         config.get_record_fps(), config.video_codec, config.sample_interval,
-        is_match_mode() ? " [MATCH MODE - 强制 raw+imu]" : "");
+        is_match_mode() ? " [MATCH MODE - 强制 debug+imu]" : "");
 
     // 获取会话路径
     std::string session_path = debug::get_session_path();
@@ -194,16 +216,19 @@ void start_recorder_node() {
 
     // 订阅消息 (fifo_size=1 只保留最新帧)
     umt::Subscriber<hardware::SyncFrame> sync_sub("sync_frame", 1);
+    umt::Subscriber<cv::Mat> debug_sub("Detector_Debug_Image", 1);
 
     // 运行状态
     auto running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
 
     // 录制器资源
     std::unique_ptr<VideoWriterWrapper> raw_writer;
+    std::unique_ptr<VideoWriterWrapper> debug_writer;
     std::unique_ptr<CsvWriter> imu_writer;
 
     bool was_recording = false;
-    int frame_count = 0;
+    int raw_frame_count = 0;
+    int debug_frame_count = 0;
     int csv_row_count = 0;
     int64_t sample_counter = 0;  // 采样计数器
 
@@ -215,7 +240,7 @@ void start_recorder_node() {
         try {
             watchdog::heartbeat("recorder");
 
-            // 检查录制开关 (比赛模式强制录制 raw + imu)
+            // 检查录制开关 (比赛模式强制录制 detector 可视化视频 + imu)
             bool match_mode = is_match_mode();
             bool enable_recording = config.enable_recording || match_mode;
 
@@ -236,12 +261,16 @@ void start_recorder_node() {
                     csv_row_count = 0;
                 }
 
-                // VideoWriter 延迟初始化 (比赛模式强制 raw)
-                if (config.record_raw_video || match_mode) {
+                // VideoWriter 延迟初始化
+                if (config.record_raw_video) {
                     raw_writer = std::make_unique<VideoWriterWrapper>();
                 }
+                if (config.record_debug_video || match_mode) {
+                    debug_writer = std::make_unique<VideoWriterWrapper>();
+                }
 
-                frame_count = 0;
+                raw_frame_count = 0;
+                debug_frame_count = 0;
                 sample_counter = 0;
                 was_recording = true;
             }
@@ -249,11 +278,16 @@ void start_recorder_node() {
             // ========== 状态转换: 停止录制 ==========
             if (!enable_recording && was_recording) {
                 debug::print(debug::PrintMode::INFO, "RecorderNode",
-                    "Recording stopped: {} frames, {} IMU rows", frame_count, csv_row_count);
+                    "Recording stopped: raw={} debug={} imu_rows={}",
+                    raw_frame_count, debug_frame_count, csv_row_count);
 
                 if (raw_writer) {
                     raw_writer->release();
                     raw_writer.reset();
+                }
+                if (debug_writer) {
+                    debug_writer->release();
+                    debug_writer.reset();
                 }
                 if (imu_writer) {
                     imu_writer->flush();
@@ -279,7 +313,7 @@ void start_recorder_node() {
             if (!enable_recording) continue;
             if (!has_sync) continue;
 
-            // 采样判断 (视频和CSV同步)
+            // 采样判断
             sample_counter++;
             bool should_record = (sample_counter % config.sample_interval == 0);
             if (!should_record) continue;
@@ -287,14 +321,17 @@ void start_recorder_node() {
             // 开始计时
             auto write_start = SteadyClock::now();
 
-            // 判断 sync_frame 是否完整 (image + serial 都有效)
-            bool sync_valid = !sync_frame.image.empty() && sync_frame.serial_valid;
+            // 判断 sync_frame 是否完整
+            bool image_valid = !sync_frame.image.empty();
+            bool serial_valid = sync_frame.serial_valid;
 
             // ========== 写入原始视频 ==========
-            if (sync_valid && raw_writer) {
+            if (image_valid && raw_writer) {
+                cv::Mat video_frame = make_video_frame(sync_frame.image);
+
                 // 延迟初始化 (首帧时获取尺寸)
                 if (!raw_writer->is_opened()) {
-                    cv::Size frame_size = sync_frame.image.size();
+                    cv::Size frame_size = video_frame.size();
                     std::string filepath = get_unique_filepath(session_path, "raw", ".mkv");
                     if (raw_writer->open(filepath,
                             config.get_record_fps(), frame_size, config.video_codec)) {
@@ -309,13 +346,47 @@ void start_recorder_node() {
                 }
 
                 if (raw_writer->is_opened()) {
-                    raw_writer->write(sync_frame.image);
-                    frame_count++;
+                    raw_writer->write(video_frame);
+                    raw_frame_count++;
+                }
+            }
+
+            // ========== 写入 Detector 可视化视频 ==========
+            if (debug_writer) {
+                cv::Mat debug_frame;
+                auto debug_frames = debug_sub.drain();
+                if (!debug_frames.empty()) {
+                    debug_frame = std::move(debug_frames.back());
+                }
+
+                if (!debug_frame.empty()) {
+                    cv::Mat video_frame = make_video_frame(debug_frame);
+
+                    // 延迟初始化 (首帧时获取尺寸)
+                    if (!debug_writer->is_opened()) {
+                        cv::Size frame_size = video_frame.size();
+                        std::string filepath = get_unique_filepath(session_path, "debug", ".mkv");
+                        if (debug_writer->open(filepath,
+                                config.get_record_fps(), frame_size, config.video_codec)) {
+                            debug::print(debug::PrintMode::INFO, "RecorderNode",
+                                "Debug video: {}x{} @ {:.1f}fps [{}]",
+                                frame_size.width, frame_size.height,
+                                config.get_record_fps(), config.video_codec);
+                        } else {
+                            debug::print(debug::PrintMode::ERROR, "RecorderNode",
+                                "Failed to open debug video: {}", filepath);
+                        }
+                    }
+
+                    if (debug_writer->is_opened()) {
+                        debug_writer->write(video_frame);
+                        debug_frame_count++;
+                    }
                 }
             }
 
             // ========== 写入 IMU CSV ==========
-            if (sync_valid && imu_writer) {
+            if (serial_valid && imu_writer) {
                 const auto& s = sync_frame.serial_data;
                 imu_writer->write_row({
                     std::to_string(sync_frame.timestamp_us),
@@ -351,6 +422,7 @@ void start_recorder_node() {
 
     // 清理资源
     if (raw_writer) raw_writer->release();
+    if (debug_writer) debug_writer->release();
     if (imu_writer) imu_writer->flush();
 
     debug::print(debug::PrintMode::INFO, "RecorderNode", "Recorder node stopped");
