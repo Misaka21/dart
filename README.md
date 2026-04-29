@@ -1,4 +1,4 @@
-# RM2026 飞镖视觉系统（RobotCV）
+# RM2026 飞镖视觉系统（dart2026）
 
 这是一个面向 RoboMaster 飞镖场景的 C++ 视觉工程。程序会从相机读取图像，从串口或虚拟数据读取电控状态，检测画面中的绿色目标灯，计算偏航方向上的像素误差，并通过网页显示调试画面和遥测曲线。
 
@@ -39,7 +39,7 @@
 
 ```text
 .
-├── CMakeLists.txt              # 顶层 CMake 配置，生成 RobotCV 可执行文件
+├── CMakeLists.txt              # 顶层 CMake 配置，生成 dart2026 可执行文件
 ├── main.cpp                    # 程序入口，启动各个线程和网页服务
 ├── config/
 │   ├── param.toml              # 检测相关运行时参数，支持热重载
@@ -121,7 +121,7 @@ Flask 网页 app
 - Flask
 - opencv-python，也就是 Python 里的 `cv2`
 
-`Message_cvMat` 和 `Telemetry` 不是 pip 包，它们由 C++ 程序通过 pybind11 嵌入导出。请从 `RobotCV` 可执行文件启动网页，不要直接单独运行 `python app/app.py`。
+`Message_cvMat` 和 `Telemetry` 不是 pip 包，它们由 C++ 程序通过 pybind11 嵌入导出。请从 `dart2026` 可执行文件启动网页，不要直接单独运行 `python app/app.py`。
 
 ### macOS 安装示例
 
@@ -160,7 +160,7 @@ cmake --build build --parallel
 编译成功后会得到：
 
 ```text
-build/RobotCV
+build/dart2026
 ```
 
 常用 CMake 选项：
@@ -193,7 +193,7 @@ cmake -S . -B build -G Ninja \
 
 ```bash
 cd build
-./RobotCV
+./dart2026
 ```
 
 程序启动后，打开浏览器：
@@ -210,7 +210,7 @@ http://localhost:3000
 
 ```bash
 cd build
-RMCV_CAMERA_INDEX=1 ./RobotCV
+RMCV_CAMERA_INDEX=1 ./dart2026
 ```
 
 可以依次尝试 `0`、`1`、`2`，直到画面正确。
@@ -518,7 +518,7 @@ python app/app.py
 
 ```bash
 cd build
-./RobotCV
+./dart2026
 ```
 
 ### 摄像头打不开
@@ -527,9 +527,9 @@ cd build
 
 ```bash
 cd build
-RMCV_CAMERA_INDEX=0 ./RobotCV
-RMCV_CAMERA_INDEX=1 ./RobotCV
-RMCV_CAMERA_INDEX=2 ./RobotCV
+RMCV_CAMERA_INDEX=0 ./dart2026
+RMCV_CAMERA_INDEX=1 ./dart2026
+RMCV_CAMERA_INDEX=2 ./dart2026
 ```
 
 如果使用海康相机：
@@ -571,7 +571,7 @@ ls /dev/tty.*
 按顺序检查：
 
 1. 终端是否有相机打开失败的错误。
-2. 是否从 `build` 目录运行了 `./RobotCV`。
+2. 是否从 `build` 目录运行了 `./dart2026`。
 3. `config/hardware.toml` 中 `Serial.use_fake_serial_data` 是否为 `true`。
 4. `Serial.fake_data.should_detect` 是否为 `true`。
 5. 相机是否真的输出了画面。
@@ -610,7 +610,7 @@ app.run(host="0.0.0.0", port=3000, threaded=True)
 
    ```bash
    cd build
-   ./RobotCV
+   ./dart2026
    ```
 
 5. 打开 `http://localhost:3000`。

@@ -16,7 +16,7 @@ void start_visualizer_node() {
     auto running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
     umt::Subscriber<cv::Mat> debug_sub("Detector_Debug_Image", 1);
 
-    const std::string window_name = "RobotCV Detector";
+    const std::string window_name = "dart2026 Detector";
     debug::print(debug::PrintMode::INFO, "VisualizerNode", "Visualizer thread started");
 
     while (running->get()) {

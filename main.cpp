@@ -47,7 +47,7 @@ int main() {
 
 	// 硬编码参数（argc=2，argv[0]=程序名，argv[1]=脚本路径）
 	const wchar_t *w_argv[] = {
-		L"./RobotCV",	  // 程序名（可自定义）
+		L"./dart2026",	  // 程序名（可自定义）
 		L"../app/app.py", // 硬编码的脚本路径
 		nullptr			  // 结束标志
 	};
