@@ -54,13 +54,11 @@ endif()
 # ============================================================================
 # 路径定义
 # ============================================================================
-set(ASSET_DIR "${CMAKE_SOURCE_DIR}/asset")
-set(CONFIG_DIR "${CMAKE_SOURCE_DIR}/asset")
+set(CONFIG_DIR "${CMAKE_SOURCE_DIR}/config")
 set(LOG_DIR "${CMAKE_SOURCE_DIR}/log")
 
 # 全局编译宏
 add_compile_definitions(
-    ASSET_DIR="${ASSET_DIR}"
     CONFIG_DIR="${CONFIG_DIR}"
     LOG_DIR="${LOG_DIR}"
     $<$<BOOL:${ENABLE_WEBVIEW}>:ENABLE_WEBVIEW>
@@ -128,17 +126,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 # ============================================================================
-# 工具程序
+# 测试/调试程序
 # ============================================================================
-add_executable(RobotCVCalibration
-    tools/calibration.cpp
+add_executable(test_calibration
+    test/test_calibration.cpp
 )
 
-target_include_directories(RobotCVCalibration PRIVATE
+target_include_directories(test_calibration PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 
-target_link_libraries(RobotCVCalibration PRIVATE
+target_link_libraries(test_calibration PRIVATE
     plugin
     hardware
     fmt::fmt

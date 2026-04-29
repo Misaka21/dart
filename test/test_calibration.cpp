@@ -1,5 +1,5 @@
 /**
- * @file calibration.cpp
+ * @file test_calibration.cpp
  * @brief Camera calibration tool for generating Detector camera_fx/camera_fy.
  */
 
@@ -242,7 +242,7 @@ void print_param_toml_block(const cv::Mat& camera_matrix, double light_diameter_
     const double fx = camera_matrix.at<double>(0, 0);
     const double fy = camera_matrix.at<double>(1, 1);
 
-    std::cout << "\n# 可直接复制到 asset/param.toml 的 [Detector] 段:\n";
+    std::cout << "\n# 可直接复制到 config/param.toml 的 [Detector] 段:\n";
     std::cout << "    # 绿灯直径测距\n";
     std::cout << "    #@double 绿灯真实直径 (m)\n";
     std::cout << "    light_diameter = " << std::fixed << std::setprecision(3) << light_diameter_m << "\n";

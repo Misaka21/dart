@@ -26,8 +26,8 @@
 | --- | --- |
 | `hardware` | 读取相机图像，读取或模拟串口数据，并把两者同步成一帧 `sync_frame` |
 | `detector` | 对图像做绿色通道阈值分割，寻找圆形绿色灯，计算目标偏航误差 |
-| `tools/calibration.cpp` | 棋盘格相机内参标定工具，输出 `param.toml` 需要的 `camera_fx/camera_fy` |
-| `plugin/param` | 读取 `asset/param.toml`，支持运行时热重载部分参数 |
+| `test/test_calibration.cpp` | 棋盘格相机内参标定工具，输出 `param.toml` 需要的 `camera_fx/camera_fy` |
+| `plugin/param` | 读取 `config/param.toml`，支持运行时热重载部分参数 |
 | `plugin/rmcv_bag` | 按配置录制原始视频和 IMU/串口 CSV 数据 |
 | `plugin/telemetry` | 收集遥测数据，供网页曲线显示 |
 | `app` | Flask 网页调试界面，默认端口 `3000` |
@@ -41,7 +41,7 @@
 .
 ├── CMakeLists.txt              # 顶层 CMake 配置，生成 RobotCV 可执行文件
 ├── main.cpp                    # 程序入口，启动各个线程和网页服务
-├── asset/
+├── config/
 │   ├── param.toml              # 检测相关运行时参数，支持热重载
 │   ├── hardware.toml           # 相机、串口、时间同步等硬件配置
 │   └── debugger.toml           # 录制、Rerun、Telemetry 配置
@@ -52,8 +52,8 @@
 ├── detector/
 │   ├── detector.cpp            # 绿色灯检测、距离估计、偏航误差计算
 │   └── detector_node.hpp       # 订阅硬件帧并发布调试图像
-├── tools/
-│   └── calibration.cpp         # 相机内参标定工具
+├── test/
+│   └── test_calibration.cpp    # 相机内参标定工具
 ├── plugin/
 │   ├── param/                  # TOML 参数读取
 │   ├── rmcv_bag/               # 视频和 CSV 录制
@@ -86,7 +86,7 @@ Flask 网页 app
 浏览器查看视频流和遥测曲线
 ```
 
-默认配置里 `asset/hardware.toml` 的 `Serial.use_fake_serial_data = true`，所以初次运行时不需要真的连接电控串口；但仍然需要有可打开的相机或视频采集设备。
+默认配置里 `config/hardware.toml` 的 `Serial.use_fake_serial_data = true`，所以初次运行时不需要真的连接电控串口；但仍然需要有可打开的相机或视频采集设备。
 
 ## 环境准备
 
@@ -217,7 +217,7 @@ RMCV_CAMERA_INDEX=1 ./RobotCV
 
 ### 第一次无电控运行
 
-默认 `asset/hardware.toml` 已经开启虚拟串口数据：
+默认 `config/hardware.toml` 已经开启虚拟串口数据：
 
 ```toml
 [Serial]
@@ -233,19 +233,19 @@ allow_fire = true
 
 ## 相机内参标定
 
-`Detector.camera_fx` 和 `Detector.camera_fy` 来自相机内参标定。工程内置了 `RobotCVCalibration` 工具，可以用棋盘格采集图像并计算焦距。
+`Detector.camera_fx` 和 `Detector.camera_fy` 来自相机内参标定。工程内置了 `test_calibration` 工具，可以用棋盘格采集图像并计算焦距。
 
 先编译标定工具：
 
 ```bash
-cmake --build build --target RobotCVCalibration --parallel
+cmake --build build --target test_calibration --parallel
 ```
 
 从 `build` 目录运行：
 
 ```bash
 cd build
-./RobotCVCalibration
+./test_calibration
 ```
 
 默认标定板参数来自旧工具：
@@ -261,7 +261,7 @@ cd build
 如果你的棋盘格或绿灯尺寸不同，可以这样运行：
 
 ```bash
-./RobotCVCalibration --board-width 11 --board-height 8 --square-size-mm 20.0 --light-diameter-m 0.050
+./test_calibration --board-width 11 --board-height 8 --square-size-mm 20.0 --light-diameter-m 0.050
 ```
 
 交互按键：
@@ -274,7 +274,7 @@ cd build
 | `u` | 撤销上一张采集图 |
 | `q` / `Esc` | 退出 |
 
-标定完成后，终端会输出一段可以直接复制到 `asset/param.toml` 的内容：
+标定完成后，终端会输出一段可以直接复制到 `config/param.toml` 的内容：
 
 ```toml
     # 绿灯直径测距
@@ -290,9 +290,9 @@ cd build
 
 ## 配置说明
 
-配置文件都在 `asset/` 目录下。修改 TOML 文件时要注意类型，文件里也写了提醒：`10.0` 不能随便改成 `10`，布尔值要写 `true` 或 `false`，字符串要加引号。
+配置文件都在 `config/` 目录下。修改 TOML 文件时要注意类型，文件里也写了提醒：`10.0` 不能随便改成 `10`，布尔值要写 `true` 或 `false`，字符串要加引号。
 
-### `asset/param.toml`
+### `config/param.toml`
 
 这是检测模块的运行时参数。程序运行时每秒读取一次，所以大多数检测参数可以边运行边修改。
 
@@ -318,7 +318,7 @@ cd build
 4. 如果画面中很多绿色噪声被误检，提高 `Detector.threshold`，或调大 `min_area`。
 5. 如果目标灯很大却不被识别，调大 `max_area`。
 
-### `asset/hardware.toml`
+### `config/hardware.toml`
 
 这是硬件配置，主要在程序启动时读取。改完后建议重启程序。
 
@@ -329,7 +329,7 @@ cd build
 | `Camera.use_camera_sn` | 使用海康 SDK 时，是否按 SN 查找相机 |
 | `Camera.camera_sn` | 海康相机 SN |
 | `Camera.use_config_from_file` | 是否加载 MVS 导出的 `.mfs` 配置 |
-| `Camera.config_file_path` | `.mfs` 文件名，路径基于 `asset/` |
+| `Camera.config_file_path` | `.mfs` 文件名，路径基于 `config/` |
 | `Camera.use_camera_config` | 是否用 `Camera.config` 覆盖相机参数 |
 | `Camera.config.ExposureTime` | 曝光时间，单位微秒 |
 | `Camera.config.Gain` | 增益 |
@@ -361,7 +361,7 @@ port_name = "/dev/ttyUSB0"
 baudrate = 115200
 ```
 
-### `asset/debugger.toml`
+### `config/debugger.toml`
 
 这是调试、录制和遥测配置。
 
@@ -428,7 +428,7 @@ log/<启动时间>/
 
 如果参数需要运行时热重载：
 
-1. 在 `asset/param.toml` 里新增字段，例如：
+1. 在 `config/param.toml` 里新增字段，例如：
 
    ```toml
    [Detector]
@@ -443,7 +443,7 @@ log/<启动时间>/
 
 3. 运行程序后修改 TOML，参数线程会在约 1 秒内更新。
 
-如果参数只需要启动时读取，参考 `asset/hardware.toml` 和 `static_param::get_param`。
+如果参数只需要启动时读取，参考 `config/hardware.toml` 和 `static_param::get_param`。
 
 ### 新增一个网页遥测曲线
 
@@ -536,7 +536,7 @@ RMCV_CAMERA_INDEX=2 ./RobotCV
 
 1. 确认 MVS SDK 安装在 `/opt/MVS`。
 2. 确认 `/opt/MVS/include/MvCameraControl.h` 存在。
-3. 确认 `asset/hardware.toml` 里的 `Camera.camera_sn` 正确。
+3. 确认 `config/hardware.toml` 里的 `Camera.camera_sn` 正确。
 4. 必要时重新配置：
 
    ```bash
@@ -564,7 +564,7 @@ macOS 上串口路径通常类似：
 ls /dev/tty.*
 ```
 
-然后把 `asset/hardware.toml` 里的 `Serial.uart.port_name` 改成对应路径。
+然后把 `config/hardware.toml` 里的 `Serial.uart.port_name` 改成对应路径。
 
 ### 网页能打开，但没有图像
 
@@ -572,7 +572,7 @@ ls /dev/tty.*
 
 1. 终端是否有相机打开失败的错误。
 2. 是否从 `build` 目录运行了 `./RobotCV`。
-3. `asset/hardware.toml` 中 `Serial.use_fake_serial_data` 是否为 `true`。
+3. `config/hardware.toml` 中 `Serial.use_fake_serial_data` 是否为 `true`。
 4. `Serial.fake_data.should_detect` 是否为 `true`。
 5. 相机是否真的输出了画面。
 
@@ -588,7 +588,7 @@ app.run(host="0.0.0.0", port=3000, threaded=True)
 
 ### 修改 `param.toml` 后没有效果
 
-`asset/param.toml` 会热重载，但要注意：
+`config/param.toml` 会热重载，但要注意：
 
 1. TOML 类型不能改错，例如原来是 `1200.0` 就保持浮点数写法。
 2. 字段名要和 C++ 里读取的路径一致。
@@ -614,6 +614,6 @@ app.run(host="0.0.0.0", port=3000, threaded=True)
    ```
 
 5. 打开 `http://localhost:3000`。
-6. 调整 `asset/param.toml` 里的 `Detector.threshold`、`min_area`、`max_area`，让绿色目标灯稳定被识别。
+6. 调整 `config/param.toml` 里的 `Detector.threshold`、`min_area`、`max_area`，让绿色目标灯稳定被识别。
 7. 接入真实串口，把 `Serial.use_fake_serial_data` 改为 `false`，配置正确的串口路径。
 8. 根据实测结果调整每枚飞镖的 `yaw_offset_*`。
