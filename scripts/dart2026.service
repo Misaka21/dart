@@ -1,0 +1,43 @@
+# dart2026 Systemd Service
+#
+# 安装: sudo ./install_service.sh
+#
+
+[Unit]
+Description=dart2026 Vision System
+After=network.target
+
+[Service]
+Type=simple
+
+User=dart
+Group=dart
+WorkingDirectory=/home/dart/dart2026/scripts
+
+# 开机自启默认比赛模式；需要调试模式时去掉 --match
+ExecStart=/home/dart/dart2026/scripts/watchdog.sh --match
+ExecStop=/bin/bash -c "pkill -f '[s]cripts/watchdog.sh'; pkill -x dart2026; screen -S dart2026 -X quit"
+
+Restart=always
+RestartSec=5
+StartLimitBurst=50
+StartLimitIntervalSec=3600
+
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+LimitRTPRIO=99
+LimitNICE=-20
+LimitMEMLOCK=infinity
+LimitNOFILE=65536
+
+Environment="DISPLAY=:0"
+Environment="LD_LIBRARY_PATH=/opt/MVS/lib/64:/usr/local/lib"
+
+StandardOutput=journal
+StandardError=journal
+
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

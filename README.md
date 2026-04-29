@@ -12,6 +12,7 @@
 - [环境准备](#环境准备)
 - [编译](#编译)
 - [运行](#运行)
+- [比赛模式和自启动](#比赛模式和自启动)
 - [相机内参标定](#相机内参标定)
 - [配置说明](#配置说明)
 - [调试和日志](#调试和日志)
@@ -31,6 +32,7 @@
 | `plugin/rmcv_bag` | 按配置录制原始视频和 IMU/串口 CSV 数据 |
 | `plugin/telemetry` | 收集遥测数据，供网页曲线显示 |
 | `app` | Flask 网页调试界面，默认端口 `3000` |
+| `scripts` | systemd 自启动、screen 看门狗和清理脚本 |
 | `umt` | 项目内部使用的发布/订阅消息系统 |
 
 程序启动后会开启多个线程：参数线程、硬件线程、检测线程、录制线程，以及一个嵌入式 Python/Flask 网页服务。
@@ -63,6 +65,11 @@
 │   ├── app.py                  # Flask 服务入口
 │   ├── bridge.py               # Python 侧读取 C++ 内嵌模块
 │   └── templates/              # 网页模板
+├── scripts/
+│   ├── watchdog.sh             # screen + 心跳看门狗启动脚本
+│   ├── install_service.sh      # systemd 服务安装脚本
+│   ├── cleanup.sh              # 停止服务和残留进程
+│   └── dart2026.service        # systemd 服务模板
 └── umt/                        # 消息发布/订阅和 pybind11 导出
 ```
 
@@ -231,6 +238,50 @@ allow_fire = true
 
 这表示程序会假装电控已经发送了“允许检测”的状态。初学者可以先保持这个配置，等相机和检测跑通后再接真实串口。
 
+## 比赛模式和自启动
+
+主程序支持 RMCV2026 同款启动参数：
+
+```bash
+cd build
+./dart2026 --match
+./dart2026 --log-dir ../log/manual_session
+./dart2026 --help
+```
+
+`--match` 会设置全局 `match_mode = true`。录制节点会忽略 `Recorder.enable_recording = false`，强制录制原始视频和串口/IMU CSV。
+
+更推荐通过 `scripts/watchdog.sh` 启动，它会创建日志会话目录、启动 screen、监控心跳并在异常时重启：
+
+```bash
+./scripts/watchdog.sh --match   # 比赛模式
+./scripts/watchdog.sh           # 调试模式
+```
+
+安装开机自启服务：
+
+```bash
+cd scripts
+sudo ./install_service.sh
+```
+
+安装后常用命令：
+
+```bash
+sudo systemctl start dart2026
+sudo systemctl stop dart2026
+sudo systemctl restart dart2026
+sudo systemctl status dart2026
+journalctl -u dart2026 -f
+screen -r dart2026
+```
+
+`scripts/dart2026.service` 默认使用 `watchdog.sh --match`，所以开机自启默认是比赛模式。需要临时停掉所有相关进程时：
+
+```bash
+./scripts/cleanup.sh
+```
+
 ## 相机内参标定
 
 `Detector.camera_fx` 和 `Detector.camera_fy` 来自相机内参标定。工程内置了 `test_calibration` 工具，可以用棋盘格采集图像并计算焦距。
@@ -372,6 +423,7 @@ baudrate = 115200
 | `Recorder.record_imu_csv` | 是否录制 IMU/串口 CSV |
 | `Recorder.camera_fps` | 录制视频使用的相机帧率 |
 | `Recorder.sample_interval` | 采样间隔，`1` 表示每帧都录 |
+| `--match` / `watchdog.sh --match` | 比赛模式会强制录制 raw 和 imu |
 | `Telemetry.enable` | 是否启用网页遥测 |
 | `Telemetry.publish_hz` | 网页曲线推送频率 |
 | `Telemetry.default_time_window` | 网页默认显示时间窗口，单位秒 |
@@ -400,6 +452,10 @@ log/<启动时间>/
 | 文件或目录 | 说明 |
 | --- | --- |
 | `run.log` | 程序日志 |
+| `screen.log` | `scripts/watchdog.sh` 启动时的 screen 输出 |
+| `watchdog.log` | 外部看门狗日志 |
+| `heartbeat` | 内部 watchdog 写出的节点心跳 |
+| `resources.csv` | 外部看门狗记录的进程和系统资源 |
 | `config/` | 启动时的 TOML 配置快照 |
 | `raw_*.mkv` | 录制视频，取决于 `debugger.toml` |
 | `imu_*.csv` | 录制串口/IMU 数据，取决于 `debugger.toml` |

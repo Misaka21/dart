@@ -3,6 +3,7 @@
 #include "detector.hpp"
 #include "plugin/debug/logger.hpp"
 #include "plugin/param/parameter.hpp"
+#include "plugin/watchdog/watchdog_node.hpp"
 #include "hardware/hardware_node.hpp"
 #include <opencv2/imgcodecs.hpp>
 #include <pybind11/numpy.h>
@@ -19,20 +20,30 @@ namespace detector
         // 订阅 hardware 模块发布的 sync_frame 消息
         auto frame_subscriber = umt::Subscriber<hardware::SyncFrame>("sync_frame");
         auto debug_publisher = umt::Publisher<cv::Mat>("Detector_Debug_Image");
+        auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
         //auto detector_publisher = umt::Publisher<cv::Mat>("Detector_Result");
 
         BaseDetector detector;
 
-        while (true)
+        while (app_running->get())
         {
             try
             {
 
-                while (true)
+                while (app_running->get())
                 {
                     // 获取同步帧数据
-                    auto sync_frame = frame_subscriber.pop();
+                    hardware::SyncFrame sync_frame;
+                    try
+                    {
+                        sync_frame = frame_subscriber.pop_for(50);
+                    }
+                    catch (const umt::MessageError_Timeout &)
+                    {
+                        continue;
+                    }
                     cv::Mat camera_frame = sync_frame.image;
+                    watchdog::heartbeat("detector");
 
                     detector.set_should_detect(sync_frame.serial_valid && sync_frame.serial_data.should_detect);
                     if (sync_frame.serial_valid)
@@ -56,12 +67,21 @@ namespace detector
 
                 }
             }
+            catch (umt::MessageError_Stopped &)
+            {
+                if (app_running->get())
+                {
+                    debug::print(debug::PrintMode::WARNING, "Detector", "sync_frame publisher stopped");
+                    std::this_thread::sleep_for(500ms);
+                }
+            }
             catch (std::exception &e)
             {
                 debug::print(debug::PrintMode::ERROR, "Detector", e.what());
                 std::this_thread::sleep_for(500ms);
             }
         }
+        debug::print(debug::PrintMode::INFO, "Detector", "Detector thread stopped");
     }
 
 

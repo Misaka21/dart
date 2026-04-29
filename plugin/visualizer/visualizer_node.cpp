@@ -17,6 +17,7 @@ void start_visualizer_node() {
     umt::Subscriber<cv::Mat> debug_sub("Detector_Debug_Image", 1);
 
     const std::string window_name = "dart2026 Detector";
+    bool window_opened = false;
     debug::print(debug::PrintMode::INFO, "VisualizerNode", "Visualizer thread started");
 
     while (running->get()) {
@@ -25,7 +26,10 @@ void start_visualizer_node() {
             : false;
 
         if (!show_window) {
-            cv::destroyWindow(window_name);
+            if (window_opened) {
+                cv::destroyWindow(window_name);
+                window_opened = false;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
@@ -44,6 +48,7 @@ void start_visualizer_node() {
                 bgr = img;
             }
             cv::imshow(window_name, bgr);
+            window_opened = true;
             cv::waitKey(1);
         } catch (const umt::MessageError_Timeout&) {
             cv::waitKey(1);
@@ -55,7 +60,9 @@ void start_visualizer_node() {
         }
     }
 
-    cv::destroyWindow(window_name);
+    if (window_opened) {
+        cv::destroyWindow(window_name);
+    }
     debug::print(debug::PrintMode::INFO, "VisualizerNode", "Visualizer thread stopped");
 }
 

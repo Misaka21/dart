@@ -19,6 +19,7 @@
 #include "plugin/debug/logger.hpp"
 #include "plugin/param/static_config.hpp"
 #include "plugin/stats/fps_stats.hpp"
+#include "plugin/watchdog/watchdog_node.hpp"
 #include "umt/umt.hpp"
 
 namespace rmcv_bag {
@@ -212,6 +213,8 @@ void start_recorder_node() {
 
     while (running->get()) {
         try {
+            watchdog::heartbeat("recorder");
+
             // 检查录制开关 (比赛模式强制录制 raw + imu)
             bool match_mode = is_match_mode();
             bool enable_recording = config.enable_recording || match_mode;
