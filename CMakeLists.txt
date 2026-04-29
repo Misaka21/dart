@@ -71,9 +71,10 @@ find_package(OpenCV REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
-find_package(tomlplusplus CONFIG REQUIRED)
 find_package(Python 3.6 REQUIRED COMPONENTS Development Interpreter)
 find_package(pybind11 REQUIRED)
+
+# tomlplusplus 使用内嵌 header-only 版本: plugin/param/thirdparty/toml.hpp
 
 if(ENABLE_RERUN)
     include(FetchContent)
@@ -116,7 +117,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
     # 第三方库
     fmt::fmt
-    tomlplusplus::tomlplusplus
     Eigen3::Eigen
     ${OpenCV_LIBS}
     pybind11::embed
