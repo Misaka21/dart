@@ -143,3 +143,18 @@ target_link_libraries(test_calibration PRIVATE
     ${OpenCV_LIBS}
     Threads::Threads
 )
+
+add_executable(test_serial
+    test/test_serial.cpp
+)
+
+target_include_directories(test_serial PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+target_link_libraries(test_serial PRIVATE
+    hardware_serial
+    plugin
+    fmt::fmt
+    Threads::Threads
+)
