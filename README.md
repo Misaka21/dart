@@ -102,8 +102,8 @@ Flask 网页 app
 - CMake `3.16` 或更高版本
 - 支持 C++17 的编译器
   - macOS: Apple Clang
-  - Linux: GCC 或 Clang
-- Python `3.6` 或更高版本
+  - Linux: GCC `9` 或更高版本，或支持 C++17 的 Clang
+- Python `3.8` 或更高版本。CMake、pybind11、Flask 和 `cv2` 必须使用同一个 Python 版本
 - 一个相机设备
   - Linux + 海康 MVS SDK: 可使用海康工业相机后端
   - 其他情况: 自动使用 OpenCV `VideoCapture` fallback
@@ -112,14 +112,17 @@ Flask 网页 app
 
 顶层 `CMakeLists.txt` 会查找这些库：
 
-- OpenCV
-- fmt
+- OpenCV `4.x`
+- fmt `8.0` 或更高版本
 - Eigen3
-- tomlplusplus
 - Python Development
 - pybind11
 - Threads
 - libusb-1.0，可选；缺少时 USB bulk 串口支持会关闭，UART 仍可用
+
+`tomlplusplus` 已经使用工程内嵌的 header-only 版本，不需要再安装系统 `libtomlplusplus-dev`。
+
+注意：Ubuntu 20.04 源里的 `libfmt-dev` 是 `6.1.2`，太旧，编译会在 `fmt::runtime` 处失败。请安装 fmt `8.x` 或更新版本，并在 CMake 配置时通过 `CMAKE_PREFIX_PATH` 指向它。
 
 ### Python 依赖
 
@@ -130,10 +133,21 @@ Flask 网页 app
 
 `Message_cvMat` 和 `Telemetry` 不是 pip 包，它们由 C++ 程序通过 pybind11 嵌入导出。请从 `dart2026` 可执行文件启动网页，不要直接单独运行 `python app/app.py`。
 
+如果机器上同时有多个 Python 版本，先确认选中的 Python 能导入网页依赖：
+
+```bash
+python3 - <<'PY'
+import flask
+import cv2
+import numpy
+print("python deps ok")
+PY
+```
+
 ### macOS 安装示例
 
 ```bash
-brew install cmake ninja opencv fmt eigen tomlplusplus pybind11 libusb
+brew install cmake ninja opencv fmt eigen pybind11 libusb
 python3 -m pip install --user flask opencv-python
 ```
 
@@ -149,19 +163,25 @@ python -m pip install flask opencv-python
 sudo apt update
 sudo apt install -y build-essential cmake ninja-build pkg-config
 sudo apt install -y libopencv-dev libfmt-dev libeigen3-dev pybind11-dev python3-dev python3-pip
-sudo apt install -y libusb-1.0-0-dev libtomlplusplus-dev
+sudo apt install -y libusb-1.0-0-dev
 python3 -m pip install --user flask opencv-python
 ```
 
-如果你的系统源没有 `libtomlplusplus-dev`，可以用 vcpkg 或手动安装 tomlplusplus，然后在 CMake 配置时传入对应的 `tomlplusplus_DIR`。
+如果系统源里的 fmt 版本低于 `8.0`，请手动安装 fmt `8.x` 或更高版本，例如安装到 `$HOME/local/fmt-8.1.1`，然后在 CMake 配置时加入：
+
+```bash
+-DCMAKE_PREFIX_PATH=$HOME/local/fmt-8.1.1
+```
 
 ## 编译
 
 建议使用独立的 `build` 目录，不要把编译产物放到源码目录里。
 
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build --parallel
+mkdir -p build
+cd build
+cmake ..
+make -j8
 ```
 
 编译成功后会得到：
@@ -179,11 +199,24 @@ build/dart2026
 | `ENABLE_RERUN` | `OFF` | 启用 Rerun 可视化记录；开启时会下载 Rerun C++ SDK |
 | `RMCV_WITH_HIK_CAMERA` | 自动 | 有 `/opt/MVS/include/MvCameraControl.h` 且架构支持时启用海康 SDK 后端 |
 
+如果机器上有多个 Python 版本，请显式指定能导入 Flask、cv2 和 numpy 的那一个，例如：
+
+```bash
+cmake .. \
+  -DPYTHON_EXECUTABLE=/usr/bin/python3.8 \
+  -DPYTHON_LIBRARY=/usr/lib/aarch64-linux-gnu/libpython3.8.so \
+  -DPYTHON_INCLUDE_DIR=/usr/include/python3.8 \
+  -DPython_EXECUTABLE=/usr/bin/python3.8 \
+  -DPython_LIBRARY=/usr/lib/aarch64-linux-gnu/libpython3.8.so \
+  -DPython_INCLUDE_DIR=/usr/include/python3.8
+make -j8
+```
+
 如果你想强制使用普通 USB 摄像头或笔记本摄像头，可以关闭海康后端：
 
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRMCV_WITH_HIK_CAMERA=OFF
-cmake --build build --parallel
+cmake .. -DRMCV_WITH_HIK_CAMERA=OFF
+make -j8
 ```
 
 如果 CMake 找不到某个库，先确认依赖已经安装；如果安装在非标准路径，可以传入对应的 `*_DIR`，例如：
