@@ -21,6 +21,7 @@ namespace detector
         auto frame_subscriber = umt::Subscriber<hardware::SyncFrame>("sync_frame");
         auto debug_publisher = umt::Publisher<cv::Mat>("Detector_Debug_Image");
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
+        auto vision_transmit = umt::BasicObjManager<serial::VisionData_t>::find_or_create("vision_transmit");
         //auto detector_publisher = umt::Publisher<cv::Mat>("Detector_Result");
 
         BaseDetector detector;
@@ -55,7 +56,10 @@ namespace detector
                     detector.detect(camera_frame);
 
                     // 计算偏航差值
-                    detector.calculate_yaw_diff();
+                    const int yaw_diff_px = detector.calculate_yaw_diff();
+                    serial::VisionData_t vision_data;
+                    vision_data.yaw_offset_px = yaw_diff_px;
+                    vision_transmit->store(vision_data);
                     detector.publish_telemetry();
 
 

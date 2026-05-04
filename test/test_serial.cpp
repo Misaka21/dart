@@ -17,7 +17,6 @@
 #include <thread>
 #include <vector>
 
-#include "hardware/serial/crc16.hpp"
 #include "hardware/serial/protocol/protocol_interface.hpp"
 #include "hardware/serial/serial_thread.hpp"
 #include "plugin/debug/logger.hpp"
@@ -89,8 +88,6 @@ serial::SerialUtils::PacketType make_receive_packet(bool should_detect, uint8_t 
     packet.load_data(should_detect_byte, 1);
     packet.load_data(dart_number, 2);
 
-    auto* buffer = const_cast<uint8_t*>(packet.buffer());
-    serial::crc16_append(buffer + 1, 6);
     return packet;
 }
 
@@ -131,6 +128,23 @@ void print_receive_data(const serial::SerialReceiveData& data) {
 int main() {
     debug::set_min_level(debug::PrintMode::DEBUG);
     telemetry::init_from_config();
+
+    serial::VisionData_t transmit_data;
+    transmit_data.yaw_offset_px = -123;
+    serial::SerialUtils::PacketType transmit_packet;
+    if (!serial::SerialUtils::vision_data_to_packet(transmit_data, transmit_packet)) {
+        std::cerr << "failed to pack transmit data\n";
+        return 1;
+    }
+
+    int16_t decoded_yaw_offset = 0;
+    transmit_packet.unload_data(decoded_yaw_offset, 1);
+    if (decoded_yaw_offset != transmit_data.yaw_offset_px) {
+        std::cerr << "transmit packet check failed: " << hex_dump(transmit_packet) << '\n';
+        return 1;
+    }
+    std::cout << "output packet: " << hex_dump(transmit_packet)
+              << " yaw_offset_px=" << decoded_yaw_offset << '\n';
 
     auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
     auto recv_enabled = umt::BasicObjManager<bool>::find_or_create("serial_recv_enabled", true);

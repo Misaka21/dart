@@ -427,7 +427,6 @@ cd build
 | `Serial.protocol` | `"uart"` 或 `"usb_bulk"` |
 | `Serial.use_fake_serial_data` | 是否使用虚拟串口数据。初次调试建议 `true` |
 | `Serial.data_print_debug` | 是否打印串口收发调试信息 |
-| `Serial.ignore_crc` | 是否忽略 CRC 校验 |
 | `Serial.uart.port_name` | UART 设备路径，例如 Linux 的 `/dev/ttyUSB0` |
 | `Serial.uart.baudrate` | UART 波特率 |
 | `Serial.usb_bulk.*` | USB bulk 通信参数，仅在 `protocol = "usb_bulk"` 时使用 |

@@ -1,7 +1,6 @@
 #include <chrono>
 #include <thread>
 
-#include "crc16.hpp"
 #include "plugin/debug/logger.hpp"
 #include "plugin/param/static_config.hpp"
 #include "plugin/rerun/rmcv_rerun.hpp"
@@ -23,6 +22,18 @@ namespace {
 
 std::string reconnect_attempts_to_string(int64_t max_reconnect) {
     return max_reconnect < 0 ? "inf" : std::to_string(max_reconnect);
+}
+
+int16_t clamp_yaw_offset_px(int yaw_offset_px) {
+    constexpr int kMaxInt16 = 32767;
+    constexpr int kMinInt16 = -32768;
+    if (yaw_offset_px > kMaxInt16) {
+        return static_cast<int16_t>(kMaxInt16);
+    }
+    if (yaw_offset_px < kMinInt16) {
+        return static_cast<int16_t>(kMinInt16);
+    }
+    return static_cast<int16_t>(yaw_offset_px);
 }
 
 std::shared_ptr<ProtocolInterface> create_uart_protocol(const toml::table& config) {
@@ -90,7 +101,6 @@ public:
     static void start_serial_threads() {
         auto config = static_param::parse_file("hardware.toml");
 
-        bool ignore_crc = static_param::get_param<bool>(config, "Serial", "ignore_crc");
         bool data_print_debug = static_param::get_param<bool>(config, "Serial", "data_print_debug");
         auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", data_print_debug);
         debug_print->get() = data_print_debug;
@@ -145,7 +155,7 @@ public:
         }
 
         try {
-            auto transceiver = std::make_shared<TransceiverManager<8>>(protocol, ignore_crc);
+            auto transceiver = std::make_shared<TransceiverManager<8>>(protocol);
             std::thread([transceiver]() { serial_sender_run(transceiver); }).detach();
             std::thread([transceiver]() { serial_receiver_run(transceiver); }).detach();
             debug::print(debug::PrintMode::INFO, "SerialManager", "TX/RX threads started");
@@ -288,14 +298,10 @@ bool SerialUtils::vision_data_to_packet(const VisionData_t& cmd, PacketType& pac
     try {
         packet.clear();
 
-        const uint8_t control = cmd.is_found ? 1U : 0U;
-        const uint8_t shoot = 0U;
+        const int16_t yaw_offset_px = clamp_yaw_offset_px(cmd.yaw_offset_px);
 
-        packet.load_data(control, 1);
-        packet.load_data(shoot, 2);
+        packet.load_data(yaw_offset_px, 1);
 
-        uint8_t* buf = const_cast<uint8_t*>(packet.buffer());
-        crc16_append(buf + 1, 6);
         return true;
     } catch (const std::exception& e) {
         debug::print(debug::PrintMode::ERROR, "SerialUtils", "vision_data_to_packet: {}", e.what());

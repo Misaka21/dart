@@ -37,8 +37,6 @@
     protocol = "uart"
     #@bool 打印串口调试信息
     data_print_debug = false
-    #@bool 忽略 CRC 校验
-    ignore_crc = false
     #@bool 不接串口时使用虚拟数据
     use_fake_serial_data = true
     #@bool IMU 符号修正: yaw 取反

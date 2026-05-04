@@ -9,19 +9,13 @@
 
 namespace serial {
 
-// 保留当前工程的发送接口；底层会映射到 dart 8B 协议。
 struct VisionData_t {
-    uint8_t cmd_id;
-    float yaw;         // 兼容旧接口保留，dart 8B 协议暂不发送
-    float pitch;       // 兼容旧接口保留，dart 8B 协议暂不发送
-    float distance;
-    uint8_t target_id;
-    uint8_t is_found;
+    int yaw_offset_px;
 
-    VisionData_t()
-        : cmd_id(0x01), yaw(0.0f), pitch(0.0f), distance(0.0f), target_id(0), is_found(0) {}
+    VisionData_t() : yaw_offset_px(0) {}
 };
 
+// Dart 发送协议: 视觉只上传当前像素偏差 yaw_offset_px。
 // Dart 接收协议: 电控只下发是否检测和当前第几枚飞镖。
 struct SerialReceiveData {
     float yaw;

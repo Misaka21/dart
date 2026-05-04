@@ -22,7 +22,7 @@
 namespace serial {
 
 // 定长数据包封装
-// [head_byte(0xff),...(data_bytes)...,check_byte,tail_byte(0x0d)]
+// [head_byte(0xff),...(data_bytes)...,tail_byte(0x0d)]
 template<std::size_t Capacity = 16>
 class FixedPacket {
 public:
@@ -41,19 +41,10 @@ public:
     
     /**
      * @brief Flush buffer
-     * 清除缓存, date_bytes和check_byte都用0填充
+     * 清除缓存，数据区用 0 填充
      */
     void clear() noexcept {
         std::fill(_buffer.begin() + 1, _buffer.end() - 1, 0);
-    }
-
-    /**
-     * @brief Set the check byte
-     * 设置校验字节
-     * @param check_byte
-     */
-    void set_check_byte(uint8_t check_byte) noexcept {
-        _buffer[Capacity - 2] = check_byte;
     }
 
     /**
