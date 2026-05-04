@@ -21,11 +21,8 @@ struct SerialReceiveData {
     bool should_detect;
     uint8_t dart_number;
 
-    int64_t recv_time_us = 0;
-
     SerialReceiveData()
-        : should_detect(false), dart_number(1)
-        , recv_time_us(0) {}
+        : should_detect(false), dart_number(1) {}
 };
 
 void serial_sender_run(std::shared_ptr<TransceiverManager<8>> transceiver);

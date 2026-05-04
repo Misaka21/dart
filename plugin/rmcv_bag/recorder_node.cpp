@@ -255,8 +255,7 @@ void start_recorder_node() {
                     imu_writer = std::make_unique<CsvWriter>(imu_filepath);
                     imu_writer->write_header({
                         "timestamp_us", "frame_id",
-                        "should_detect", "dart_number",
-                        "serial_timestamp"
+                        "should_detect", "dart_number"
                     });
                     csv_row_count = 0;
                 }
@@ -392,8 +391,7 @@ void start_recorder_node() {
                     std::to_string(sync_frame.timestamp_us),
                     std::to_string(sync_frame.frame_id),
                     std::to_string(s.should_detect ? 1 : 0),
-                    std::to_string(s.dart_number),
-                    std::to_string(s.recv_time_us)
+                    std::to_string(s.dart_number)
                 });
                 csv_row_count++;
 

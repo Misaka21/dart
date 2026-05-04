@@ -429,7 +429,7 @@ cd build
 | `Serial.uart.port_name` | UART 设备路径，例如 Linux 的 `/dev/ttyUSB0` |
 | `Serial.uart.baudrate` | UART 波特率 |
 | `Serial.usb_bulk.*` | USB bulk 通信参数，仅在 `protocol = "usb_bulk"` 时使用 |
-| `TimeSync.delta_t_us` | 相机和 IMU 数据的时间偏移，单位微秒 |
+| `TimeSync.delta_t_us` | 相机和串口状态的时间偏移，单位微秒 |
 
 接真实 UART 串口时，常见配置是：
 

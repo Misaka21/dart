@@ -226,8 +226,6 @@ void serial_receiver_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
     try {
         umt::Publisher<SerialReceiveData> publisher("serial_receive");
         auto current_should_detect = umt::BasicObjManager<bool>::find_or_create("current_should_detect", false);
-        auto current_should_detect_time_us =
-            umt::BasicObjManager<int64_t>::find_or_create("current_should_detect_time_us", 0);
         auto recv_enabled = umt::BasicObjManager<bool>::find_or_create("serial_recv_enabled", true);
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
         auto debug_print = umt::BasicObjManager<bool>::find_or_create("serial_debug_print", false);
@@ -253,16 +251,9 @@ void serial_receiver_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
                         debug::print(debug::PrintMode::DEBUG, "SerialRX", "{}", hex);
                     }
 
-                    auto recv_time = std::chrono::steady_clock::now();
-                    int64_t recv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                        recv_time.time_since_epoch()
-                    ).count();
-
                     SerialReceiveData receive_data;
                     if (SerialUtils::packet_to_receive_data(packet, receive_data)) {
-                        receive_data.recv_time_us = recv_time_us;
                         current_should_detect->store(receive_data.should_detect);
-                        current_should_detect_time_us->store(recv_time_us);
 
                         static const telemetry::Series serial_should_detect("serial/should_detect");
                         static const telemetry::Series serial_dart_number("serial/dart_number");

@@ -26,7 +26,7 @@ using namespace std::chrono_literals;
 using SteadyClock = std::chrono::steady_clock;
 
 struct TimestampedSerialData {
-    int64_t recv_time_us;
+    int64_t timestamp_us;
     serial::SerialReceiveData data;
 };
 
@@ -62,7 +62,9 @@ void drain_subscriber_to_buffer(umt::Subscriber<serial::SerialReceiveData>& subs
     for (auto& data : messages) {
         TimestampedSerialData ts_data;
         ts_data.data = data;
-        ts_data.recv_time_us = data.recv_time_us;
+        ts_data.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            SteadyClock::now().time_since_epoch()
+        ).count();
 
         buffer.push_back(ts_data);
         while (buffer.size() > max_buffer_size) {
@@ -81,7 +83,7 @@ std::optional<serial::SerialReceiveData> find_nearest_serial_data(
     auto it_after = std::lower_bound(
         buffer.begin(), buffer.end(), target_time_us,
         [](const TimestampedSerialData& d, int64_t t) {
-            return d.recv_time_us < t;
+            return d.timestamp_us < t;
         }
     );
 
@@ -94,19 +96,17 @@ std::optional<serial::SerialReceiveData> find_nearest_serial_data(
     } else {
         const auto& before = *std::prev(it_after);
         const auto& after = *it_after;
-        nearest_ptr = std::abs(before.recv_time_us - target_time_us) <=
-                      std::abs(after.recv_time_us - target_time_us)
+        nearest_ptr = std::abs(before.timestamp_us - target_time_us) <=
+                      std::abs(after.timestamp_us - target_time_us)
                           ? &before
                           : &after;
     }
 
-    if (!nearest_ptr || std::abs(nearest_ptr->recv_time_us - target_time_us) > max_diff_us) {
+    if (!nearest_ptr || std::abs(nearest_ptr->timestamp_us - target_time_us) > max_diff_us) {
         return std::nullopt;
     }
 
-    serial::SerialReceiveData result = nearest_ptr->data;
-    result.recv_time_us = target_time_us;
-    return result;
+    return nearest_ptr->data;
 }
 
 void start_hardware_node() {
@@ -151,8 +151,6 @@ void start_hardware_node() {
         umt::Publisher<SyncFrame> pub("sync_frame");
         umt::Subscriber<serial::SerialReceiveData> serial_subscriber("serial_receive", 300);
         auto current_should_detect = umt::BasicObjManager<bool>::find_or_create("current_should_detect", false);
-        auto current_should_detect_time_us =
-            umt::BasicObjManager<int64_t>::find_or_create("current_should_detect_time_us", 0);
         auto hardware_running = umt::BasicObjManager<bool>::find_or_create("hardware_running", false);
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
 
@@ -204,7 +202,6 @@ void start_hardware_node() {
 
                 if (frame.serial_valid) {
                     current_should_detect->store(frame.serial_data.should_detect);
-                    current_should_detect_time_us->store(frame.timestamp_us);
                 }
 
                 pub.push(frame);
