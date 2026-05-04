@@ -116,9 +116,6 @@ void print_receive_data(const serial::SerialReceiveData& data) {
         << "parsed: "
         << "should_detect=" << (data.should_detect ? "true" : "false")
         << ", dart_number=" << static_cast<int>(data.dart_number)
-        << ", aim_mode=" << static_cast<int>(data.aim_mode)
-        << ", allow_fire=" << (data.allow_fire ? "true" : "false")
-        << ", aiming_lock=" << (data.aiming_lock ? "true" : "false")
         << ", recv_time_us=" << data.recv_time_us
         << '\n';
 }

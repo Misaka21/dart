@@ -266,7 +266,6 @@ use_fake_serial_data = true
 [Serial.fake_data]
 should_detect = true
 dart_number = 2
-allow_fire = true
 ```
 
 这表示程序会假装电控已经发送了“允许检测”的状态。初学者可以先保持这个配置，等相机和检测跑通后再接真实串口。

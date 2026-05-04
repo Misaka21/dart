@@ -39,12 +39,6 @@
     data_print_debug = false
     #@bool 不接串口时使用虚拟数据
     use_fake_serial_data = true
-    #@bool IMU 符号修正: yaw 取反
-    imu_yaw_negate = false
-    #@bool IMU 符号修正: pitch 取反
-    imu_pitch_negate = false
-    #@bool IMU 符号修正: roll 取反
-    imu_roll_negate = true
 
 [Serial.uart]
     #@string 串口设备路径
@@ -72,10 +66,9 @@
     should_detect = true
     #@int 当前第几枚飞镖，实际串口由电控发送
     dart_number = 2
-    allow_fire = true
 
 [TimeSync]
-    #@int 相机-IMU 时间偏移 (微秒)
-    # 正值: 图像比 IMU 数据晚到达，匹配过去的 IMU
-    # 负值: 图像比 IMU 数据早到达，匹配未来的 IMU
+    #@int 相机-串口状态时间偏移 (微秒)
+    # 正值: 图像比串口状态晚到达，匹配过去的串口状态
+    # 负值: 图像比串口状态早到达，匹配未来的串口状态
     delta_t_us = 4886

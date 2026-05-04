@@ -2,12 +2,12 @@
 #include <chrono>
 #include <cmath>
 #include <deque>
+#include <iterator>
 #include <optional>
 #include <thread>
 #include <type_traits>
 #include <vector>
 
-#include <Eigen/Geometry>
 #include <fmt/format.h>
 #include <opencv2/core/mat.hpp>
 
@@ -71,25 +71,12 @@ void drain_subscriber_to_buffer(umt::Subscriber<serial::SerialReceiveData>& subs
     }
 }
 
-inline Eigen::Quaterniond euler_to_quat(float yaw_rad, float pitch_rad, float roll_rad) {
-    return Eigen::AngleAxisd(static_cast<double>(yaw_rad), Eigen::Vector3d::UnitZ())
-         * Eigen::AngleAxisd(static_cast<double>(pitch_rad), Eigen::Vector3d::UnitY())
-         * Eigen::AngleAxisd(static_cast<double>(roll_rad), Eigen::Vector3d::UnitX());
-}
-
-inline void quat_to_euler(const Eigen::Quaterniond& q, float& yaw_rad, float& pitch_rad, float& roll_rad) {
-    Eigen::Vector3d euler = q.toRotationMatrix().eulerAngles(2, 1, 0);
-    yaw_rad = static_cast<float>(euler[0]);
-    pitch_rad = static_cast<float>(euler[1]);
-    roll_rad = static_cast<float>(euler[2]);
-}
-
-std::optional<serial::SerialReceiveData> interpolate_serial_data(
+std::optional<serial::SerialReceiveData> find_nearest_serial_data(
     const std::deque<TimestampedSerialData>& buffer,
     int64_t target_time_us,
     int64_t max_diff_us = 50000) {
 
-    if (buffer.size() < 2) return std::nullopt;
+    if (buffer.empty()) return std::nullopt;
 
     auto it_after = std::lower_bound(
         buffer.begin(), buffer.end(), target_time_us,
@@ -98,55 +85,27 @@ std::optional<serial::SerialReceiveData> interpolate_serial_data(
         }
     );
 
-    const TimestampedSerialData* before_ptr = nullptr;
-    const TimestampedSerialData* after_ptr = nullptr;
+    const TimestampedSerialData* nearest_ptr = nullptr;
 
     if (it_after == buffer.begin()) {
-        before_ptr = &buffer[0];
-        after_ptr = &buffer[1];
+        nearest_ptr = &buffer.front();
     } else if (it_after == buffer.end()) {
-        before_ptr = &buffer[buffer.size() - 2];
-        after_ptr = &buffer[buffer.size() - 1];
+        nearest_ptr = &buffer.back();
     } else {
-        before_ptr = &(*std::prev(it_after));
-        after_ptr = &(*it_after);
+        const auto& before = *std::prev(it_after);
+        const auto& after = *it_after;
+        nearest_ptr = std::abs(before.recv_time_us - target_time_us) <=
+                      std::abs(after.recv_time_us - target_time_us)
+                          ? &before
+                          : &after;
     }
 
-    const auto& before = *before_ptr;
-    const auto& after = *after_ptr;
-
-    int64_t min_diff = std::min(
-        std::abs(before.recv_time_us - target_time_us),
-        std::abs(after.recv_time_us - target_time_us)
-    );
-    if (min_diff > max_diff_us) {
+    if (!nearest_ptr || std::abs(nearest_ptr->recv_time_us - target_time_us) > max_diff_us) {
         return std::nullopt;
     }
 
-    double dt = static_cast<double>(after.recv_time_us - before.recv_time_us);
-    if (dt <= 0) {
-        return before.data;
-    }
-    double t = static_cast<double>(target_time_us - before.recv_time_us) / dt;
-
-    serial::SerialReceiveData result;
-
-    Eigen::Quaterniond q_before = euler_to_quat(before.data.yaw, before.data.pitch, before.data.roll);
-    Eigen::Quaterniond q_after = euler_to_quat(after.data.yaw, after.data.pitch, after.data.roll);
-    Eigen::Quaterniond q_interp = q_before.slerp(t, q_after);
-    quat_to_euler(q_interp, result.yaw, result.pitch, result.roll);
-
-    const auto& nearest = (t < 0.5) ? before.data : after.data;
-    result.robot_id = nearest.robot_id;
-    result.bullet_speed = nearest.bullet_speed;
-    result.aim_mode = nearest.aim_mode;
-    result.should_detect = nearest.should_detect;
-    result.dart_number = nearest.dart_number;
-    result.aiming_lock = nearest.aiming_lock;
-    result.enemy_color = nearest.enemy_color;
-    result.allow_fire = nearest.allow_fire;
+    serial::SerialReceiveData result = nearest_ptr->data;
     result.recv_time_us = target_time_us;
-
     return result;
 }
 
@@ -163,22 +122,14 @@ void start_hardware_node() {
 
         int64_t delta_t_us = static_param::get_param<int64_t>(config, "TimeSync", "delta_t_us");
 
-        bool imu_pitch_negate = static_param::get_param<bool>(config, "Serial", "imu_pitch_negate");
-        bool imu_roll_negate = static_param::get_param<bool>(config, "Serial", "imu_roll_negate");
-        bool imu_yaw_negate = static_param::get_param<bool>(config, "Serial", "imu_yaw_negate");
-
         bool use_fake_serial = static_param::get_param<bool>(config, "Serial", "use_fake_serial_data");
-        bool injected_allow_fire = static_param::get_param<bool>(config, "Serial.fake_data", "allow_fire");
 
         serial::SerialReceiveData fake_data;
         if (use_fake_serial) {
             fake_data.should_detect =
                 static_param::get_param<bool>(config, "Serial.fake_data", "should_detect");
-            fake_data.aim_mode = fake_data.should_detect ? 1U : 0U;
             fake_data.dart_number = static_cast<uint8_t>(
                 static_param::get_param<int64_t>(config, "Serial.fake_data", "dart_number"));
-            fake_data.aiming_lock = fake_data.should_detect;
-            fake_data.allow_fire = injected_allow_fire && fake_data.should_detect;
         }
 
         debug::print(debug::PrintMode::INFO, "HardwareNode", "Delta_t: {} us", delta_t_us);
@@ -189,8 +140,8 @@ void start_hardware_node() {
             std::this_thread::sleep_for(100ms);
         } else {
             debug::print(debug::PrintMode::WARNING, "HardwareNode",
-                "Using fake serial: should_detect={}, dart_number={}, bullet_speed={:.1f}",
-                fake_data.should_detect, fake_data.dart_number, fake_data.bullet_speed);
+                "Using fake serial: should_detect={}, dart_number={}",
+                fake_data.should_detect, fake_data.dart_number);
         }
 
         camera::CameraConfig cam_config = load_camera_config(config);
@@ -244,7 +195,7 @@ void start_hardware_node() {
                     drain_subscriber_to_buffer(serial_subscriber, serial_buffer, max_buffer_size);
 
                     int64_t target_time_us = cam_time_us - delta_t_us;
-                    if (auto data = interpolate_serial_data(serial_buffer, target_time_us)) {
+                    if (auto data = find_nearest_serial_data(serial_buffer, target_time_us)) {
                         frame.serial_data = *data;
                         frame.serial_valid = true;
                         synced = true;
@@ -252,21 +203,8 @@ void start_hardware_node() {
                 }
 
                 if (frame.serial_valid) {
-                    frame.serial_data.allow_fire = injected_allow_fire && frame.serial_data.should_detect;
                     current_should_detect->store(frame.serial_data.should_detect);
                     current_should_detect_time_us->store(frame.timestamp_us);
-                }
-
-                if (frame.serial_valid) {
-                    if (imu_yaw_negate) {
-                        frame.serial_data.yaw = -frame.serial_data.yaw;
-                    }
-                    if (imu_pitch_negate) {
-                        frame.serial_data.pitch = -frame.serial_data.pitch;
-                    }
-                    if (imu_roll_negate) {
-                        frame.serial_data.roll = -frame.serial_data.roll;
-                    }
                 }
 
                 pub.push(frame);

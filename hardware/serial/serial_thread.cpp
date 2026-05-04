@@ -324,9 +324,6 @@ bool SerialUtils::packet_to_receive_data(const PacketType& packet, SerialReceive
             data.dart_number = dart_number;
         }
 
-        data.aim_mode = data.should_detect ? 1U : 0U;
-        data.aiming_lock = data.should_detect;
-        data.allow_fire = data.should_detect;
         return true;
     } catch (const std::exception& e) {
         debug::print(debug::PrintMode::ERROR, "SerialUtils", "packet_to_receive_data: {}", e.what());

@@ -86,7 +86,7 @@ private:
                 return true;
             }
 
-            // 兼容旧录包: timestamp, frame, yaw, pitch, roll, bullet_speed, aim_mode, [dart_number], ...
+            // 兼容旧录包格式，只取检测开关和飞镖编号。
             record.should_detect = (std::stoi(tokens[6]) != 0);
             record.dart_number = tokens.size() >= 10 ? static_cast<uint8_t>(std::stoi(tokens[7])) : 1;
             record.serial_timestamp = std::stoll(tokens.back());
@@ -180,10 +180,7 @@ void start_playback_node(const std::string& bag_path, double playback_speed) {
         sync_frame.timestamp_us = imu.timestamp_us;
 
         sync_frame.serial_data.should_detect = imu.should_detect;
-        sync_frame.serial_data.aim_mode = imu.should_detect ? 1U : 0U;
         sync_frame.serial_data.dart_number = imu.dart_number;
-        sync_frame.serial_data.aiming_lock = imu.should_detect;
-        sync_frame.serial_data.allow_fire = imu.should_detect;
         sync_frame.serial_data.recv_time_us = imu.serial_timestamp;
         sync_frame.serial_valid = true;
         if (csv_index < csv_reader->size()) {
