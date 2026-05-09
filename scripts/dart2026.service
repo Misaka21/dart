@@ -6,9 +6,13 @@
 [Unit]
 Description=dart2026 Vision System
 After=network.target
+StartLimitBurst=50
+StartLimitIntervalSec=3600
 
 [Service]
 Type=simple
+PermissionsStartOnly=true
+ExecStartPre=/usr/bin/jetson_clocks --fan
 
 User=dart
 Group=dart
@@ -20,8 +24,6 @@ ExecStop=/bin/bash -c "pkill -f '[s]cripts/watchdog.sh'; pkill -x dart2026; scre
 
 Restart=always
 RestartSec=5
-StartLimitBurst=50
-StartLimitIntervalSec=3600
 
 IOSchedulingClass=realtime
 IOSchedulingPriority=0
