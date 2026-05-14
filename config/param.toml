@@ -1,11 +1,11 @@
 [Detector]
     # 绿色通道二值化
     #@int 绿色通道二值化阈值
-    threshold = 200
+    threshold = 100
 
     # 轮廓面积过滤
     #@int 最小轮廓面积
-    min_area = 1000
+    min_area = 1
     #@int 最大轮廓面积
     max_area = 90000
 

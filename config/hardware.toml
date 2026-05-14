@@ -2,11 +2,11 @@
 
 [Camera]
     #@bool 是否通过 sn 码查找相机，false 则查找第 0 个
-    use_camera_sn = true
+    use_camera_sn = false
     #@string 相机 sn 码
-    camera_sn = "00G07828078"
+    camera_sn = "DA5850580"
     #@bool 使用从 MVS 导出的配置文件
-    use_config_from_file = true
+    use_config_from_file = false
     #@string 配置文件在 config 文件夹中的路径
     config_file_path = "MV-CA016-10UC_00G07828078.mfs"
     #@bool 是否从 Camera.config 中设置参数，会覆盖上文中的文件配置
@@ -16,13 +16,13 @@
     #@float 曝光时间 (us)
     ExposureTime = 9500.0
     #@float 增益
-    Gain = 16.9
+    Gain = 15.9
     #@bool 水平翻转
     ReverseX = false
     #@bool 垂直翻转
     ReverseY = false
     #@int 图像宽度
-    Width = 1440
+    Width = 2448
     #@string ADC 位深
     ADCBitDepth = "Bits_8"
     #@bool 启用 Gamma 校正
@@ -42,7 +42,7 @@
 
 [Serial.uart]
     #@string 串口设备路径
-    port_name = "/dev/ttyUSB0"
+    port_name = "/dev/ttydart"
     #@int 波特率
     baudrate = 115200
 
