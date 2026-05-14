@@ -189,6 +189,20 @@ void start_hardware_node() {
                     frame.serial_data = fake_data;
                     frame.serial_valid = true;
                     synced = true;
+
+                    // 可视化：伪造串口收发数据
+                    auto vision_transmit = umt::BasicObjManager<serial::VisionData_t>::find("vision_transmit");
+                    auto tx_debug = umt::BasicObjManager<std::string>::find_or_create(
+                        "serial_tx_debug", std::string{});
+                    auto rx_debug = umt::BasicObjManager<std::string>::find_or_create(
+                        "serial_rx_debug", std::string{});
+                    int yaw = vision_transmit ? vision_transmit->load().yaw_offset_px : 0;
+                    tx_debug->store(fmt::format(
+                        "TX: yaw={:d}  raw=[FAKE]", yaw));
+                    rx_debug->store(fmt::format(
+                        "RX: detect={:d}  dart={:d}  raw=[FAKE]",
+                        fake_data.should_detect ? 1 : 0,
+                        static_cast<int>(fake_data.dart_number)));
                 } else {
                     drain_subscriber_to_buffer(serial_subscriber, serial_buffer, max_buffer_size);
 

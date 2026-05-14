@@ -15,8 +15,8 @@ namespace visualizer {
 void start_visualizer_node() {
     auto running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
     umt::Subscriber<cv::Mat> debug_sub("Detector_Debug_Image", 1);
-    auto tx_debug = umt::BasicObjManager<std::string>::find("serial_tx_debug");
-    auto rx_debug = umt::BasicObjManager<std::string>::find("serial_rx_debug");
+    auto tx_debug = umt::BasicObjManager<std::string>::find_or_create("serial_tx_debug", std::string{});
+    auto rx_debug = umt::BasicObjManager<std::string>::find_or_create("serial_rx_debug", std::string{});
 
     const std::string window_name = "dart2026 Detector";
     bool window_opened = false;
