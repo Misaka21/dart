@@ -112,6 +112,8 @@ auto HikCam::capture() -> cv::Mat& {
                 cv::cvtColor(rawData, _srcImage, cv::COLOR_GRAY2RGB);
             } else if (PixelType_Gvsp_BayerRG8 == stImageInfo.stFrameInfo.enPixelType) {
                 cv::cvtColor(rawData, _srcImage, cv::COLOR_BayerRG2RGB);
+            } else if (PixelType_Gvsp_BayerGR8 == stImageInfo.stFrameInfo.enPixelType) {
+                cv::cvtColor(rawData, _srcImage, cv::COLOR_BayerGR2RGB);
             } else {
                 debug::print(debug::PrintMode::ERROR, "Camera", "Unsupported pixel format");
             }
