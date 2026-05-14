@@ -1,9 +1,4 @@
-#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <deque>
-#include <iterator>
-#include <optional>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -24,11 +19,6 @@ namespace hardware {
 
 using namespace std::chrono_literals;
 using SteadyClock = std::chrono::steady_clock;
-
-struct TimestampedSerialData {
-    int64_t timestamp_us;
-    serial::SerialReceiveData data;
-};
 
 camera::CameraConfig load_camera_config(const toml::table& config) {
     camera::CameraConfig cam_config;
@@ -55,60 +45,6 @@ camera::CameraConfig load_camera_config(const toml::table& config) {
     return cam_config;
 }
 
-void drain_subscriber_to_buffer(umt::Subscriber<serial::SerialReceiveData>& subscriber,
-                                std::deque<TimestampedSerialData>& buffer,
-                                size_t max_buffer_size) {
-    auto messages = subscriber.drain();
-    for (auto& data : messages) {
-        TimestampedSerialData ts_data;
-        ts_data.data = data;
-        ts_data.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
-            SteadyClock::now().time_since_epoch()
-        ).count();
-
-        buffer.push_back(ts_data);
-        while (buffer.size() > max_buffer_size) {
-            buffer.pop_front();
-        }
-    }
-}
-
-std::optional<serial::SerialReceiveData> find_nearest_serial_data(
-    const std::deque<TimestampedSerialData>& buffer,
-    int64_t target_time_us,
-    int64_t max_diff_us = 50000) {
-
-    if (buffer.empty()) return std::nullopt;
-
-    auto it_after = std::lower_bound(
-        buffer.begin(), buffer.end(), target_time_us,
-        [](const TimestampedSerialData& d, int64_t t) {
-            return d.timestamp_us < t;
-        }
-    );
-
-    const TimestampedSerialData* nearest_ptr = nullptr;
-
-    if (it_after == buffer.begin()) {
-        nearest_ptr = &buffer.front();
-    } else if (it_after == buffer.end()) {
-        nearest_ptr = &buffer.back();
-    } else {
-        const auto& before = *std::prev(it_after);
-        const auto& after = *it_after;
-        nearest_ptr = std::abs(before.timestamp_us - target_time_us) <=
-                      std::abs(after.timestamp_us - target_time_us)
-                          ? &before
-                          : &after;
-    }
-
-    if (!nearest_ptr || std::abs(nearest_ptr->timestamp_us - target_time_us) > max_diff_us) {
-        return std::nullopt;
-    }
-
-    return nearest_ptr->data;
-}
-
 void start_hardware_node() {
     if (debug::get_session_path().empty()) {
         debug::init_session();
@@ -120,8 +56,6 @@ void start_hardware_node() {
     try {
         auto config = static_param::parse_file("hardware.toml");
 
-        int64_t delta_t_us = static_param::get_param<int64_t>(config, "TimeSync", "delta_t_us");
-
         bool use_fake_serial = static_param::get_param<bool>(config, "Serial", "use_fake_serial_data");
 
         serial::SerialReceiveData fake_data;
@@ -132,7 +66,6 @@ void start_hardware_node() {
                 static_param::get_param<int64_t>(config, "Serial.fake_data", "dart_number"));
         }
 
-        debug::print(debug::PrintMode::INFO, "HardwareNode", "Delta_t: {} us", delta_t_us);
         debug::print(debug::PrintMode::INFO, "HardwareNode", "Use fake serial: {}", use_fake_serial);
 
         if (!use_fake_serial) {
@@ -154,15 +87,12 @@ void start_hardware_node() {
         auto hardware_running = umt::BasicObjManager<bool>::find_or_create("hardware_running", false);
         auto app_running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
 
+        serial::SerialReceiveData latest_serial;
+        bool has_serial = false;
+
         debug::print(debug::PrintMode::INFO, "HardwareNode", "Hardware node started");
 
-        std::deque<TimestampedSerialData> serial_buffer;
-        constexpr size_t max_buffer_size = 200;
-
         stats::FpsStats stats("HardwareNode", "synced");
-        stats.set_extra_info([&serial_buffer]() {
-            return fmt::format("buf: {}", serial_buffer.size());
-        });
 
         int consecutive_errors = 0;
         const int max_consecutive_errors = 3;
@@ -204,11 +134,13 @@ void start_hardware_node() {
                         fake_data.should_detect ? 1 : 0,
                         static_cast<int>(fake_data.dart_number)));
                 } else {
-                    drain_subscriber_to_buffer(serial_subscriber, serial_buffer, max_buffer_size);
-
-                    int64_t target_time_us = cam_time_us - delta_t_us;
-                    if (auto data = find_nearest_serial_data(serial_buffer, target_time_us)) {
-                        frame.serial_data = *data;
+                    auto messages = serial_subscriber.drain();
+                    if (!messages.empty()) {
+                        latest_serial = messages.back();
+                        has_serial = true;
+                    }
+                    if (has_serial) {
+                        frame.serial_data = latest_serial;
                         frame.serial_valid = true;
                         synced = true;
                     }
