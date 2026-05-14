@@ -66,6 +66,22 @@ namespace detector
                     cv::Mat debug_img = camera_frame.clone();
                     detector.draw(debug_img);
 
+                    // 叠加串口收发调试信息到 debug 图像（网页可见）
+                    auto tx_debug = umt::BasicObjManager<std::string>::find_or_create(
+                        "serial_tx_debug", std::string{});
+                    auto rx_debug = umt::BasicObjManager<std::string>::find_or_create(
+                        "serial_rx_debug", std::string{});
+                    const int font = cv::FONT_HERSHEY_SIMPLEX;
+                    const double scale = 0.5;
+                    const int thickness = 1;
+                    std::string tx_text = tx_debug->load();
+                    std::string rx_text = rx_debug->load();
+                    if (!tx_text.empty())
+                        cv::putText(debug_img, tx_text, cv::Point(8, 18),
+                            font, scale, cv::Scalar(0, 255, 255), thickness);
+                    if (!rx_text.empty())
+                        cv::putText(debug_img, rx_text, cv::Point(8, 36),
+                            font, scale, cv::Scalar(0, 255, 0), thickness);
 
                     debug_publisher.push(debug_img);
 

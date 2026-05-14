@@ -15,8 +15,6 @@ namespace visualizer {
 void start_visualizer_node() {
     auto running = umt::BasicObjManager<bool>::find_or_create("app_running", true);
     umt::Subscriber<cv::Mat> debug_sub("Detector_Debug_Image", 1);
-    auto tx_debug = umt::BasicObjManager<std::string>::find_or_create("serial_tx_debug", std::string{});
-    auto rx_debug = umt::BasicObjManager<std::string>::find_or_create("serial_rx_debug", std::string{});
 
     const std::string window_name = "dart2026 Detector";
     bool window_opened = false;
@@ -49,24 +47,6 @@ void start_visualizer_node() {
             } else {
                 bgr = img;
             }
-
-            // 叠加串口收发调试信息
-            const int font = cv::FONT_HERSHEY_SIMPLEX;
-            const double scale = 0.5;
-            const int thickness = 1;
-            const int line_h = 18;
-            int y_pos = 18;
-
-            if (tx_debug) {
-                cv::putText(bgr, tx_debug->load(), cv::Point(8, y_pos),
-                    font, scale, cv::Scalar(0, 255, 255), thickness);
-                y_pos += line_h;
-            }
-            if (rx_debug) {
-                cv::putText(bgr, rx_debug->load(), cv::Point(8, y_pos),
-                    font, scale, cv::Scalar(0, 255, 0), thickness);
-            }
-
             cv::imshow(window_name, bgr);
             window_opened = true;
             cv::waitKey(1);
