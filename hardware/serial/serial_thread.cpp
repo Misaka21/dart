@@ -204,6 +204,16 @@ void serial_sender_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
                     if (transceiver->send_packet(packet)) {
                         sent = true;
                     }
+
+                    // 可视化：发送的原始字节与解析值
+                    auto tx_debug = umt::BasicObjManager<std::string>::find_or_create(
+                        "serial_tx_debug", std::string{});
+                    tx_debug->store(fmt::format(
+                        "TX: yaw={:d}  raw=[{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
+                        vision_data.yaw_offset_px,
+                        packet.buffer()[0], packet.buffer()[1], packet.buffer()[2],
+                        packet.buffer()[3], packet.buffer()[4], packet.buffer()[5],
+                        packet.buffer()[6], packet.buffer()[7]));
                 }
 
                 fps_stats.update(0, sent);
@@ -263,6 +273,17 @@ void serial_receiver_run(std::shared_ptr<TransceiverManager<8>> transceiver) {
                         rr::scalar("serial/dart_number", static_cast<int>(receive_data.dart_number));
 
                         publisher.push(receive_data);
+
+                        // 可视化：接收的原始字节与解析值
+                        auto rx_debug = umt::BasicObjManager<std::string>::find_or_create(
+                            "serial_rx_debug", std::string{});
+                        rx_debug->store(fmt::format(
+                            "RX: detect={:d}  dart={:d}  raw=[{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}]",
+                            receive_data.should_detect ? 1 : 0,
+                            static_cast<int>(receive_data.dart_number),
+                            packet.buffer()[0], packet.buffer()[1], packet.buffer()[2],
+                            packet.buffer()[3], packet.buffer()[4], packet.buffer()[5],
+                            packet.buffer()[6], packet.buffer()[7]));
                     }
                 } else {
                     std::this_thread::sleep_for(1ms);
