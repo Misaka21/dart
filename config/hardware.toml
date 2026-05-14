@@ -6,11 +6,11 @@
     #@string 相机 sn 码
     camera_sn = "DA5850580"
     #@bool 使用从 MVS 导出的配置文件
-    use_config_from_file = false
+    use_config_from_file = true
     #@string 配置文件在 config 文件夹中的路径
-    config_file_path = "MV-CA016-10UC_00G07828078.mfs"
+    config_file_path = "MV-CS050-60UC_DA5850580.mfs"
     #@bool 是否从 Camera.config 中设置参数，会覆盖上文中的文件配置
-    use_camera_config = true
+    use_camera_config = false
 
 [Camera.config]
     #@float 曝光时间 (us)
